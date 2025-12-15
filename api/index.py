@@ -15,6 +15,11 @@ from license_web_admin import app
 # Vercel ожидает функцию handler
 def handler(request):
     """Vercel serverless handler"""
-    # Vercel автоматически предоставляет WSGI адаптер
-    # Просто возвращаем Flask app как WSGI приложение
-    return app(request.environ, lambda status, headers: None)
+    # Используем WSGI адаптер от Vercel
+    from vercel import WSGI
+    
+    # Создаем WSGI адаптер для Flask
+    wsgi = WSGI(app)
+    
+    # Обрабатываем запрос и возвращаем ответ
+    return wsgi(request)
