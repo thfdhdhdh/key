@@ -32,14 +32,22 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
 CORS(app)
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('license_api.log'),
-        logging.StreamHandler()
-    ]
-)
+# На Vercel не используем FileHandler
+if os.getenv('VERCEL'):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('license_api.log'),
+            logging.StreamHandler()
+        ]
+    )
 logger = logging.getLogger(__name__)
 
 # Секретный ключ из переменных окружения
@@ -56,7 +64,8 @@ if not ADMIN_WHITELIST:
 # Настройки БД
 # По умолчанию используем SQLite (не требует установки PostgreSQL)
 USE_SQLITE = os.getenv('USE_SQLITE', 'true').lower() == 'true'
-DB_FILE = os.getenv('DB_FILE', 'licenses.db')  # Файл SQLite
+# На Vercel используем /tmp (единственное место где можно писать)
+DB_FILE = os.getenv('DB_FILE', '/tmp/licenses.db' if os.getenv('VERCEL') else 'licenses.db')
 
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
