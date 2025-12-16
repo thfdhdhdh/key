@@ -838,7 +838,6 @@ ADMIN_HTML = """
                         html += '<tr>' +
                             '<td><div class="key-cell">' +
                             '<span class="key-text key-clickable" onclick="showKeyInfo(' + JSON.stringify(lic) + ')" title="Нажмите для подробной информации">' + escapeHtml(lic.key) + '</span>' +
-                            '<button onclick="copyKey(' + keyEscaped + ')" class="copy-btn" title="Копировать ключ">📋</button>' +
                             '</div></td>' +
                             '<td><span class="' + statusClass + '">' + escapeHtml(lic.status) + '</span></td>' +
                             '<td>' + new Date(lic.created_at).toLocaleDateString('ru-RU') + '</td>' +
@@ -1255,11 +1254,12 @@ def api_licenses():
         licenses = cur.fetchall()
         # Конвертируем datetime в строки
         for lic in licenses:
-            if lic['created_at']:
+            # SQLite может вернуть строки, поэтому вызываем isoformat только у datetime
+            if lic['created_at'] and hasattr(lic['created_at'], 'isoformat'):
                 lic['created_at'] = lic['created_at'].isoformat()
-            if lic['expires_at']:
+            if lic['expires_at'] and hasattr(lic['expires_at'], 'isoformat'):
                 lic['expires_at'] = lic['expires_at'].isoformat()
-            if lic['activated_at']:
+            if lic['activated_at'] and hasattr(lic['activated_at'], 'isoformat'):
                 lic['activated_at'] = lic['activated_at'].isoformat()
         
         cur.close()
