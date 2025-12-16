@@ -643,6 +643,78 @@ ADMIN_HTML = """
             font-size: 11px;
             margin: 2px;
         }
+        .key-input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .key-input-group input {
+            flex: 1;
+            min-width: 200px;
+            font-family: 'Courier New', monospace;
+            cursor: text;
+        }
+        .key-input-group button {
+            white-space: nowrap;
+        }
+        .copy-btn {
+            padding: 6px 12px;
+            font-size: 11px;
+            background: #000;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .copy-btn:hover {
+            background: #333;
+        }
+        .copy-btn:active {
+            background: #666;
+        }
+        .key-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .key-text {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            flex: 1;
+            min-width: 150px;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-item {
+            flex: 1;
+        }
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #666;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 300;
+            color: #000;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -667,9 +739,11 @@ ADMIN_HTML = """
 
         <div class="card">
             <h2>Список лицензий</h2>
-            <div class="form-group" style="display: flex; gap: 10px;">
+            <div id="statsContainer"></div>
+            <div class="form-group" style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <input type="text" id="searchKey" placeholder="Поиск по ключу..." style="flex: 1;">
                 <button onclick="loadLicenses()">Обновить</button>
+                <button onclick="exportKeys()" style="background: #666;">Экспорт</button>
             </div>
             <div id="licensesTable"></div>
         </div>
@@ -705,12 +779,21 @@ ADMIN_HTML = """
                     const keyEscaped = keyText.replace(/'/g, "\\'").replace(/"/g, '\\"');
                     document.getElementById('generateResult').innerHTML = 
                         '<div class="result-box result-success">' +
-                        '<strong>Ключ сгенерирован:</strong><br>' +
-                        '<div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">' +
-                        '<span class="key-code" id="generatedKey" style="display: inline-block; background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: #fff; flex: 1; word-break: break-all;">' + keyText + '</span>' +
-                        '<button onclick="copyKey(' + JSON.stringify(keyText) + ')" style="padding: 8px 16px; background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.5); color: #fff; cursor: pointer; text-transform: uppercase; font-size: 11px;">Копировать</button>' +
+                        '<strong>✅ Ключ успешно сгенерирован!</strong><br>' +
+                        '<div class="key-input-group" style="margin-top: 15px;">' +
+                        '<input type="text" value="' + escapeHtml(keyText) + '" id="generatedKeyInput" readonly style="font-family: monospace; font-size: 14px; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; cursor: text;">' +
+                        '<button onclick="copyKey(' + JSON.stringify(keyText) + ')" style="padding: 10px 20px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; cursor: pointer; text-transform: uppercase; font-size: 12px; white-space: nowrap;">📋 Копировать</button>' +
                         '</div>' +
+                        '<p style="margin-top: 10px; font-size: 12px; opacity: 0.8;">Ключ готов к использованию в вашем софте!</p>' +
                         '</div>';
+                    // Автоматически выбираем текст для удобства копирования
+                    setTimeout(() => {
+                        const input = document.getElementById('generatedKeyInput');
+                        if (input) {
+                            input.select();
+                            input.setSelectionRange(0, 99999);
+                        }
+                    }, 100);
                     form.reset();
                     loadLicenses();
                 } else {
@@ -722,10 +805,13 @@ ADMIN_HTML = """
 
         function loadLicenses() {
             const search = document.getElementById('searchKey').value;
-            fetch('/api/licenses' + (search ? '?search=' + search : ''))
+            fetch('/api/licenses' + (search ? '?search=' + encodeURIComponent(search) : ''))
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
+                    // Обновляем статистику
+                    updateStats(data.licenses);
+                    
                     if (data.licenses.length === 0) {
                         document.getElementById('licensesTable').innerHTML = '<p style="padding: 20px; color: #999; text-align: center;">Нет лицензий</p>';
                         return;
@@ -750,24 +836,104 @@ ADMIN_HTML = """
                         const keyEscaped = JSON.stringify(lic.key);
                         
                         html += '<tr>' +
-                            '<td><div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">' +
-                            '<span class="key-code key-clickable" onclick="showKeyInfo(' + JSON.stringify(lic) + ')" style="cursor: pointer; flex: 1; min-width: 200px; word-break: break-all;">' + lic.key + '</span>' +
-                            '<button onclick="copyKey(' + keyEscaped + ')" class="btn-small" style="padding: 4px 8px; font-size: 10px; background: #000; color: #fff; border: none; cursor: pointer; white-space: nowrap;">Копировать</button>' +
+                            '<td><div class="key-cell">' +
+                            '<span class="key-text key-clickable" onclick="showKeyInfo(' + JSON.stringify(lic) + ')" title="Нажмите для подробной информации">' + escapeHtml(lic.key) + '</span>' +
+                            '<button onclick="copyKey(' + keyEscaped + ')" class="copy-btn" title="Копировать ключ">📋</button>' +
                             '</div></td>' +
-                            '<td><span class="' + statusClass + '">' + lic.status + '</span></td>' +
+                            '<td><span class="' + statusClass + '">' + escapeHtml(lic.status) + '</span></td>' +
                             '<td>' + new Date(lic.created_at).toLocaleDateString('ru-RU') + '</td>' +
-                            '<td>' + expires + '</td>' +
+                            '<td>' + escapeHtml(expires) + '</td>' +
                             '<td>' + device + '</td>' +
-                            '<td>' +
+                            '<td><div class="action-buttons">' +
                             (lic.status === 'active' ? 
-                                '<button class="btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')">Заблокировать</button>' :
-                                '<button class="btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')">Разблокировать</button>') +
-                            '</td>' +
+                                '<button class="btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')" title="Заблокировать ключ">🚫</button>' :
+                                '<button class="btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')" title="Разблокировать ключ">✅</button>') +
+                            '<button class="btn-danger btn-small" onclick="deleteKey(' + keyEscaped + ')" title="Удалить ключ" style="background: #d32f2f;">🗑️</button>' +
+                            '</div></td>' +
                             '</tr>';
                     });
                     html += '</table>';
                     document.getElementById('licensesTable').innerHTML = html;
+                } else {
+                    showNotification('Ошибка загрузки: ' + (data.message || 'Неизвестная ошибка'), 'error');
                 }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка загрузки лицензий', 'error');
+            });
+        }
+        
+        function updateStats(licenses) {
+            const stats = {
+                total: licenses.length,
+                active: licenses.filter(l => l.status === 'active').length,
+                blocked: licenses.filter(l => l.status === 'blocked').length,
+                expired: licenses.filter(l => l.status === 'expired').length,
+                activated: licenses.filter(l => l.device_id).length
+            };
+            
+            document.getElementById('statsContainer').innerHTML = 
+                '<div class="stats">' +
+                '<div class="stat-item"><div class="stat-label">Всего</div><div class="stat-value">' + stats.total + '</div></div>' +
+                '<div class="stat-item"><div class="stat-label">Активных</div><div class="stat-value">' + stats.active + '</div></div>' +
+                '<div class="stat-item"><div class="stat-label">Заблокировано</div><div class="stat-value">' + stats.blocked + '</div></div>' +
+                '<div class="stat-item"><div class="stat-label">Истекло</div><div class="stat-value">' + stats.expired + '</div></div>' +
+                '<div class="stat-item"><div class="stat-label">Активировано</div><div class="stat-value">' + stats.activated + '</div></div>' +
+                '</div>';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function deleteKey(key) {
+            if (!confirm('Вы уверены, что хотите удалить ключ ' + key + '? Это действие нельзя отменить!')) {
+                return;
+            }
+            fetch('/api/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: key})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Ключ удален', 'success');
+                    loadLicenses();
+                } else {
+                    showNotification('Ошибка: ' + (data.message || 'Не удалось удалить ключ'), 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка удаления ключа', 'error');
+            });
+        }
+        
+        function exportKeys() {
+            fetch('/api/licenses')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const keys = data.licenses.map(l => l.key).join('\\n');
+                    const blob = new Blob([keys], {type: 'text/plain'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'licenses_' + new Date().toISOString().split('T')[0] + '.txt';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showNotification('Ключи экспортированы', 'success');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка экспорта', 'error');
             });
         }
 
@@ -880,33 +1046,93 @@ ADMIN_HTML = """
         }
 
         function copyKey(key) {
-            navigator.clipboard.writeText(key).then(function() {
-                // Показываем уведомление вместо alert
-                const notification = document.createElement('div');
-                notification.textContent = 'Ключ скопирован!';
-                notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #000; color: #fff; padding: 12px 24px; z-index: 10000; font-size: 13px;';
-                document.body.appendChild(notification);
-                setTimeout(() => notification.remove(), 2000);
-            }, function(err) {
-                // Fallback для старых браузеров
-                const textArea = document.createElement('textarea');
-                textArea.value = key;
-                textArea.style.position = 'fixed';
-                textArea.style.opacity = '0';
-                document.body.appendChild(textArea);
-                textArea.select();
-                try {
-                    document.execCommand('copy');
-                    const notification = document.createElement('div');
-                    notification.textContent = 'Ключ скопирован!';
-                    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #000; color: #fff; padding: 12px 24px; z-index: 10000; font-size: 13px;';
-                    document.body.appendChild(notification);
-                    setTimeout(() => notification.remove(), 2000);
-                } catch (err) {
-                    alert('Ошибка копирования. Ключ: ' + key);
+            // Улучшенная функция копирования
+            if (!key) {
+                showNotification('Ошибка: ключ пуст', 'error');
+                return;
+            }
+            
+            // Метод 1: Современный Clipboard API
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(key).then(function() {
+                    showNotification('Ключ скопирован!', 'success');
+                }).catch(function(err) {
+                    // Fallback на старый метод
+                    copyKeyFallback(key);
+                });
+            } else {
+                // Метод 2: Fallback для старых браузеров
+                copyKeyFallback(key);
+            }
+        }
+        
+        function copyKeyFallback(key) {
+            // Создаем временный input элемент
+            const textArea = document.createElement('textarea');
+            textArea.value = key;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            textArea.style.opacity = '0';
+            textArea.setAttribute('readonly', '');
+            document.body.appendChild(textArea);
+            
+            // Выбираем текст
+            textArea.select();
+            textArea.setSelectionRange(0, 99999); // Для мобильных устройств
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showNotification('Ключ скопирован!', 'success');
+                } else {
+                    // Последний вариант - показать ключ для ручного копирования
+                    showKeyForCopy(key);
                 }
-                document.body.removeChild(textArea);
-            });
+            } catch (err) {
+                console.error('Ошибка копирования:', err);
+                showKeyForCopy(key);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+        
+        function showKeyForCopy(key) {
+            // Создаем модальное окно с ключом для ручного копирования
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+            modal.innerHTML = `
+                <div style="background: #fff; padding: 30px; max-width: 500px; width: 90%; border: 1px solid #e0e0e0;">
+                    <h3 style="margin-bottom: 15px;">Скопируйте ключ вручную:</h3>
+                    <div class="key-input-group">
+                        <input type="text" value="${key}" id="manualCopyInput" readonly style="cursor: text; user-select: all;">
+                        <button onclick="document.getElementById('manualCopyInput').select(); document.execCommand('copy'); showNotification('Ключ скопирован!', 'success'); this.parentElement.parentElement.parentElement.remove();">Копировать</button>
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="margin-top: 15px; width: 100%; background: #999;">Закрыть</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            // Автоматически выбираем текст
+            setTimeout(() => {
+                const input = document.getElementById('manualCopyInput');
+                if (input) {
+                    input.select();
+                    input.setSelectionRange(0, 99999);
+                }
+            }, 100);
+        }
+        
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.textContent = message;
+            const bgColor = type === 'success' ? '#000' : '#d32f2f';
+            notification.style.cssText = `position: fixed; top: 20px; right: 20px; background: ${bgColor}; color: #fff; padding: 12px 24px; z-index: 10000; font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);`;
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.style.transition = 'opacity 0.3s';
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
         }
 
         document.getElementById('generateForm').addEventListener('submit', function(e) {
@@ -1019,7 +1245,10 @@ def api_licenses():
         
         cur = get_cursor(conn)
         if search:
-            execute_query(cur, "SELECT * FROM licenses WHERE key LIKE %s ORDER BY created_at DESC", (f'%{search}%',))
+            if USE_SQLITE:
+                execute_query(cur, "SELECT * FROM licenses WHERE key LIKE ? ORDER BY created_at DESC", (f'%{search}%',))
+            else:
+                execute_query(cur, "SELECT * FROM licenses WHERE key LIKE %s ORDER BY created_at DESC", (f'%{search}%',))
         else:
             execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC")
         
@@ -1054,7 +1283,10 @@ def api_block():
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
         cur = conn.cursor()
-        execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = %s", (key,))
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = %s", (key,))
         conn.commit()
         cur.close()
         conn.close()
@@ -1076,13 +1308,49 @@ def api_unblock():
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
         cur = conn.cursor()
-        execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = %s", (key,))
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = %s", (key,))
         conn.commit()
         cur.close()
         conn.close()
         
         return jsonify({"success": True}), 200
     except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/delete', methods=['POST'])
+@require_login
+def api_delete():
+    """Удаление ключа"""
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = conn.cursor()
+        if USE_SQLITE:
+            execute_query(cur, "DELETE FROM licenses WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "DELETE FROM licenses WHERE key = %s", (key,))
+        conn.commit()
+        deleted = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        if deleted > 0:
+            return jsonify({"success": True, "message": "Ключ удален"}), 200
+        else:
+            return jsonify({"success": False, "message": "Ключ не найден"}), 404
+    except Exception as e:
+        logger.error(f"Ошибка удаления ключа: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 # API endpoints для клиента (БЕЗ проверки IP whitelist - доступны всем)
