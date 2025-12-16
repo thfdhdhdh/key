@@ -56,9 +56,11 @@ ADMIN_KEY = os.getenv("ADMIN_KEY", "CHANGE_THIS_ADMIN_KEY")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # Измените!
 
 # Whitelist IP для доступа к админ-панели
+# На Vercel whitelist отключен по умолчанию (разрешаем всем)
+ADMIN_WHITELIST_ENABLED = os.getenv("ADMIN_WHITELIST_ENABLED", "false" if os.getenv('VERCEL') else "true").lower() == 'true'
 ADMIN_WHITELIST = os.getenv("ADMIN_WHITELIST", "").split(",") if os.getenv("ADMIN_WHITELIST") else []
-# Если whitelist пуст, разрешаем доступ с localhost
-if not ADMIN_WHITELIST:
+# Если whitelist пуст и не на Vercel, разрешаем доступ с localhost
+if not ADMIN_WHITELIST and not os.getenv('VERCEL'):
     ADMIN_WHITELIST = ["127.0.0.1", "::1", "localhost"]
 
 # Настройки БД
@@ -265,11 +267,16 @@ def check_timestamp(timestamp):
 
 def check_ip_whitelist():
     """Проверка IP в whitelist"""
+    # Если whitelist отключен, разрешаем всем
+    if not ADMIN_WHITELIST_ENABLED:
+        return True
+    
+    # Если whitelist пуст, разрешаем всем
     if not ADMIN_WHITELIST:
-        return True  # Если whitelist пуст, разрешаем всем
+        return True
     
     client_ip = request.remote_addr
-    # Проверяем также через заголовки прокси
+    # Проверяем также через заголовки прокси (важно для Vercel)
     forwarded_for = request.headers.get('X-Forwarded-For')
     if forwarded_for:
         client_ip = forwarded_for.split(',')[0].strip()
@@ -277,6 +284,15 @@ def check_ip_whitelist():
     real_ip = request.headers.get('X-Real-IP')
     if real_ip:
         client_ip = real_ip
+    
+    # Проверяем Vercel заголовки
+    vercel_ip = request.headers.get('X-Vercel-Forwarded-For')
+    if vercel_ip:
+        client_ip = vercel_ip.split(',')[0].strip()
+    
+    # Нормализуем IP (убираем порт если есть)
+    if ':' in client_ip and not client_ip.startswith('['):
+        client_ip = client_ip.split(':')[0]
     
     return client_ip in ADMIN_WHITELIST or any(ip.strip() in ADMIN_WHITELIST for ip in [client_ip])
 
@@ -286,7 +302,11 @@ def require_login(f):
     def decorated_function(*args, **kwargs):
         # Проверка IP whitelist
         if not check_ip_whitelist():
-            return jsonify({"error": "Доступ запрещен"}), 403
+            client_ip = request.remote_addr
+            forwarded_for = request.headers.get('X-Forwarded-For', '')
+            real_ip = request.headers.get('X-Real-IP', '')
+            logger.warning(f"Доступ запрещен. IP: {client_ip}, X-Forwarded-For: {forwarded_for}, X-Real-IP: {real_ip}, Whitelist: {ADMIN_WHITELIST}")
+            return jsonify({"error": "Доступ запрещен", "ip": client_ip}), 403
         
         if 'admin_logged_in' not in session:
             return redirect(url_for('login'))
@@ -919,7 +939,11 @@ def login():
     """Страница входа"""
     # Проверка IP whitelist
     if not check_ip_whitelist():
-        return jsonify({"error": "Доступ запрещен. Ваш IP не в whitelist"}), 403
+        client_ip = request.remote_addr
+        forwarded_for = request.headers.get('X-Forwarded-For', '')
+        real_ip = request.headers.get('X-Real-IP', '')
+        logger.warning(f"Попытка входа с запрещенного IP: {client_ip}, X-Forwarded-For: {forwarded_for}, X-Real-IP: {real_ip}, Whitelist: {ADMIN_WHITELIST}")
+        return jsonify({"error": "Доступ запрещен. Ваш IP не в whitelist", "ip": client_ip}), 403
     
     # Получаем IP клиента
     client_ip = request.remote_addr
