@@ -1251,16 +1251,21 @@ def api_licenses():
         else:
             execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC")
         
-        licenses = cur.fetchall()
-        # Конвертируем datetime в строки
-        for lic in licenses:
-            # SQLite может вернуть строки, поэтому вызываем isoformat только у datetime
-            if lic['created_at'] and hasattr(lic['created_at'], 'isoformat'):
-                lic['created_at'] = lic['created_at'].isoformat()
-            if lic['expires_at'] and hasattr(lic['expires_at'], 'isoformat'):
-                lic['expires_at'] = lic['expires_at'].isoformat()
-            if lic['activated_at'] and hasattr(lic['activated_at'], 'isoformat'):
-                lic['activated_at'] = lic['activated_at'].isoformat()
+        raw_licenses = cur.fetchall()
+        licenses = []
+        # Конвертируем строки БД в обычные dict + приводим даты к строкам
+        for row in raw_licenses:
+            lic = dict(row) if USE_SQLITE else row
+            created = lic.get('created_at')
+            expires = lic.get('expires_at')
+            activated = lic.get('activated_at')
+            if created and hasattr(created, 'isoformat'):
+                lic['created_at'] = created.isoformat()
+            if expires and hasattr(expires, 'isoformat'):
+                lic['expires_at'] = expires.isoformat()
+            if activated and hasattr(activated, 'isoformat'):
+                lic['activated_at'] = activated.isoformat()
+            licenses.append(lic)
         
         cur.close()
         conn.close()
