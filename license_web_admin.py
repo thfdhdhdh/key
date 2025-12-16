@@ -62,37 +62,80 @@ if not ADMIN_WHITELIST:
     ADMIN_WHITELIST = ["127.0.0.1", "::1", "localhost"]
 
 # Настройки БД
-# По умолчанию используем SQLite (не требует установки PostgreSQL)
-USE_SQLITE = os.getenv('USE_SQLITE', 'true').lower() == 'true'
+# Если есть POSTGRES_URL, DATABASE_URL или POSTGRES_PRISMA_URL, используем PostgreSQL
+DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') or os.getenv('POSTGRES_PRISMA_URL')
+USE_SQLITE = os.getenv('USE_SQLITE', 'false' if DATABASE_URL else 'true').lower() == 'true'
 # На Vercel используем /tmp (единственное место где можно писать)
 DB_FILE = os.getenv('DB_FILE', '/tmp/licenses.db' if os.getenv('VERCEL') else 'licenses.db')
 
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432'),
-    'database': os.getenv('DB_NAME', 'license_db'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'password')
-}
+# Конфигурация PostgreSQL
+if DATABASE_URL:
+    # Используем строку подключения напрямую
+    DB_CONFIG = {'dsn': DATABASE_URL}
+else:
+    # Используем отдельные параметры
+    DB_CONFIG = {
+        'host': os.getenv('POSTGRES_HOST') or os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('POSTGRES_PORT') or os.getenv('DB_PORT', '5432'),
+        'database': os.getenv('POSTGRES_DATABASE') or os.getenv('DB_NAME', 'license_db'),
+        'user': os.getenv('POSTGRES_USER') or os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('POSTGRES_PASSWORD') or os.getenv('DB_PASSWORD', 'password')
+    }
 
 def get_db_connection():
     """Получение подключения к БД"""
     if USE_SQLITE:
         # Используем SQLite
         import sqlite3
-        conn = sqlite3.connect(DB_FILE)
-        conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            # На Vercel используем /tmp, но проверяем доступность
+            db_path = DB_FILE
+            if os.getenv('VERCEL'):
+                # Убеждаемся что директория существует
+                db_dir = os.path.dirname(db_path)
+                if db_dir and not os.path.exists(db_dir):
+                    try:
+                        os.makedirs(db_dir, exist_ok=True)
+                    except:
+                        pass
+                # Если /tmp недоступен, используем временную директорию
+                if not os.access(os.path.dirname(db_path) if os.path.dirname(db_path) else '/tmp', os.W_OK):
+                    # Fallback на временную директорию Python
+                    import tempfile
+                    db_path = os.path.join(tempfile.gettempdir(), 'licenses.db')
+                    logger.warning(f"Используем временную директорию: {db_path}")
+            
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            # Включаем WAL режим для лучшей производительности
+            conn.execute('PRAGMA journal_mode=WAL;')
+            return conn
+        except Exception as e:
+            logger.error(f"Ошибка подключения к SQLite: {e}, путь: {db_path}")
+            # Пробуем in-memory БД как последний вариант (данные не сохранятся!)
+            logger.warning("Пробуем in-memory БД (данные не сохранятся между запросами!)")
+            try:
+                conn = sqlite3.connect(':memory:', timeout=10.0)
+                conn.row_factory = sqlite3.Row
+                return conn
+            except Exception as e2:
+                logger.error(f"Ошибка создания in-memory БД: {e2}")
+                return None
     else:
         # Используем PostgreSQL
         if not PSYCOPG2_AVAILABLE:
             logger.error("psycopg2 не установлен. Используйте: pip install psycopg2-binary")
             return None
         try:
-            conn = psycopg2.connect(**DB_CONFIG)
+            # Если есть строка подключения, используем её
+            if 'dsn' in DB_CONFIG:
+                conn = psycopg2.connect(DB_CONFIG['dsn'])
+            else:
+                conn = psycopg2.connect(**DB_CONFIG)
             return conn
         except Exception as e:
-            logger.error(f"Ошибка подключения к БД: {e}")
+            logger.error(f"Ошибка подключения к PostgreSQL: {e}")
+            logger.error(f"Конфигурация: {'dsn=***' if 'dsn' in DB_CONFIG else DB_CONFIG}")
             return None
 
 def get_cursor(conn):
@@ -117,78 +160,89 @@ def execute_query(cur, query, params=None):
 
 def init_database():
     """Инициализация БД"""
-    conn = get_db_connection()
-    if not conn:
-        return False
-    
     try:
-        cur = conn.cursor()
+        conn = get_db_connection()
+        if not conn:
+            logger.error("Не удалось подключиться к БД при инициализации")
+            return False
         
-        if USE_SQLITE:
-            # SQLite синтаксис
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS licenses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    key TEXT UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    device_id TEXT,
-                    device_info TEXT,
-                    activated_at TIMESTAMP,
-                    status TEXT DEFAULT 'active',
-                    last_check TIMESTAMP,
-                    heartbeat_last TIMESTAMP
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS license_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    license_key TEXT,
-                    action TEXT,
-                    device_id TEXT,
-                    ip_address TEXT,
-                    user_agent TEXT,
-                    message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
-        else:
-            # PostgreSQL синтаксис
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS licenses (
-                    id SERIAL PRIMARY KEY,
-                    key VARCHAR(50) UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    device_id VARCHAR(64),
-                    device_info JSONB,
-                    activated_at TIMESTAMP,
-                    status VARCHAR(20) DEFAULT 'active',
-                    last_check TIMESTAMP,
-                    heartbeat_last TIMESTAMP
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS license_logs (
-                    id SERIAL PRIMARY KEY,
-                    license_key VARCHAR(50),
-                    action VARCHAR(50),
-                    device_id VARCHAR(64),
-                    ip_address VARCHAR(45),
-                    user_agent TEXT,
-                    message TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True
+        try:
+            cur = conn.cursor()
+            
+            if USE_SQLITE:
+                # SQLite синтаксис
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS licenses (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key TEXT UNIQUE NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        expires_at TIMESTAMP,
+                        device_id TEXT,
+                        device_info TEXT,
+                        activated_at TIMESTAMP,
+                        status TEXT DEFAULT 'active',
+                        last_check TIMESTAMP,
+                        heartbeat_last TIMESTAMP
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS license_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        license_key TEXT,
+                        action TEXT,
+                        device_id TEXT,
+                        ip_address TEXT,
+                        user_agent TEXT,
+                        message TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
+            else:
+                # PostgreSQL синтаксис
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS licenses (
+                        id SERIAL PRIMARY KEY,
+                        key VARCHAR(50) UNIQUE NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        expires_at TIMESTAMP,
+                        device_id VARCHAR(64),
+                        device_info JSONB,
+                        activated_at TIMESTAMP,
+                        status VARCHAR(20) DEFAULT 'active',
+                        last_check TIMESTAMP,
+                        heartbeat_last TIMESTAMP
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS license_logs (
+                        id SERIAL PRIMARY KEY,
+                        license_key VARCHAR(50),
+                        action VARCHAR(50),
+                        device_id VARCHAR(64),
+                        ip_address VARCHAR(45),
+                        user_agent TEXT,
+                        message TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("БД успешно инициализирована")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка выполнения SQL при инициализации БД: {e}")
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+            return False
     except Exception as e:
         logger.error(f"Ошибка инициализации БД: {e}")
         return False
