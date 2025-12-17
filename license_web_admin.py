@@ -930,7 +930,8 @@ ADMIN_HTML = """
                             device = '<span style="color: #22c55e;">● Да</span>';
                         }
                         
-                        const licJson = JSON.stringify(lic).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        // Сохраняем данные в атрибут
+                        const licId = 'lic_' + lic.key.replace(/[^a-zA-Z0-9]/g, '_');
                         
                         html += '<tr>' +
                             '<td><span class="key-text">' + escapeHtml(lic.key) + '</span></td>' +
@@ -938,7 +939,7 @@ ADMIN_HTML = """
                             '<td>' + new Date(lic.created_at).toLocaleDateString('ru-RU') + '</td>' +
                             '<td>' + expires + '</td>' +
                             '<td>' + device + '</td>' +
-                            '<td><button class="btn btn-secondary btn-small" onclick=\'openManage(' + licJson + ')\'>⚙️ Управление</button></td>' +
+                            '<td><button class="btn btn-secondary btn-small" data-license="' + encodeURIComponent(JSON.stringify(lic)) + '" onclick="openManageFromBtn(this)">⚙️ Управление</button></td>' +
                             '</tr>';
                     });
                     html += '</tbody></table>';
@@ -979,6 +980,12 @@ ADMIN_HTML = """
         
         // ===== МОДАЛЬНОЕ ОКНО УПРАВЛЕНИЯ =====
         let currentLicense = null;
+        
+        function openManageFromBtn(btn) {
+            const licData = btn.getAttribute('data-license');
+            const lic = JSON.parse(decodeURIComponent(licData));
+            openManage(lic);
+        }
         
         function openManage(lic) {
             currentLicense = lic;
