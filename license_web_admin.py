@@ -860,6 +860,7 @@ ADMIN_HTML = """
                     <button type="submit" class="btn btn-primary">+ Создать</button>
                 </div>
             </form>
+            <div id="lastCreatedKey"></div>
         </div>
 
         <div class="card">
@@ -899,7 +900,13 @@ ADMIN_HTML = """
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    showNotification('✅ Ключ создан: ' + data.key, 'success');
+                    showNotification('✅ Ключ создан!', 'success');
+                    // Показываем созданный ключ
+                    document.getElementById('lastCreatedKey').innerHTML = 
+                        '<div style="margin-top: 20px; padding: 20px; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px;">' +
+                        '<div style="color: #22c55e; font-size: 13px; margin-bottom: 8px;">✅ Новый ключ создан:</div>' +
+                        '<div style="font-family: monospace; font-size: 18px; color: #00d4ff; word-break: break-all; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">' + data.key + '</div>' +
+                        '</div>';
                     form.reset();
                     loadLicenses();
                 } else {
@@ -1212,16 +1219,28 @@ def api_licenses():
         licenses = []
         # Конвертируем строки БД в обычные dict + приводим даты к строкам
         for row in raw_licenses:
-            lic = dict(row) if USE_SQLITE else row
-            created = lic.get('created_at')
-            expires = lic.get('expires_at')
-            activated = lic.get('activated_at')
-            if created and hasattr(created, 'isoformat'):
-                lic['created_at'] = created.isoformat()
-            if expires and hasattr(expires, 'isoformat'):
-                lic['expires_at'] = expires.isoformat()
-            if activated and hasattr(activated, 'isoformat'):
-                lic['activated_at'] = activated.isoformat()
+            # Конвертируем в dict правильно
+            if USE_SQLITE:
+                lic = dict(row)
+            else:
+                lic = dict(row) if hasattr(row, 'keys') else {k: row[i] for i, k in enumerate(['id', 'key', 'status', 'device_id', 'device_info', 'created_at', 'activated_at', 'expires_at', 'last_check', 'description'])}
+            
+            # Приводим даты к строкам
+            for field in ['created_at', 'expires_at', 'activated_at', 'last_check']:
+                val = lic.get(field)
+                if val and hasattr(val, 'isoformat'):
+                    lic[field] = val.isoformat()
+                elif val and not isinstance(val, str):
+                    lic[field] = str(val)
+            
+            # device_info может быть JSON объектом
+            if lic.get('device_info') and not isinstance(lic['device_info'], str):
+                import json
+                try:
+                    lic['device_info'] = json.dumps(lic['device_info'])
+                except:
+                    lic['device_info'] = str(lic['device_info'])
+            
             licenses.append(lic)
         
         cur.close()
