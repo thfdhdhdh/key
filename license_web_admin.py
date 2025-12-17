@@ -412,172 +412,293 @@ ADMIN_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Лицензии</title>
+    <title>License Manager</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #ffffff;
-            padding: 40px 20px;
-            color: #000;
-        }
-        .header {
-            background: #ffffff;
-            padding: 30px 0;
-            margin-bottom: 40px;
-            border-bottom: 1px solid #e0e0e0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            color: #e4e4e7;
         }
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
+            padding: 30px 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header h1::before {
+            content: "🔐";
+            -webkit-text-fill-color: initial;
+        }
+        .logout {
+            padding: 10px 20px;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .logout:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
         }
         .card {
-            background: #ffffff;
-            padding: 30px;
-            margin-bottom: 30px;
-            border: 1px solid #e0e0e0;
+            background: rgba(30, 30, 45, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
         }
-        h1 {
-            color: #000;
-            margin-bottom: 10px;
-            font-size: 28px;
-            font-weight: 300;
-            letter-spacing: -0.5px;
-        }
-        h2 {
-            color: #000;
+        .card h2 {
+            font-size: 16px;
+            font-weight: 500;
+            color: #a1a1aa;
             margin-bottom: 20px;
-            font-size: 18px;
-            font-weight: 400;
-            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
         }
         .form-group {
-            margin-bottom: 20px;
+            flex: 1;
         }
         label {
             display: block;
             margin-bottom: 8px;
-            color: #000;
-            font-weight: 400;
-            font-size: 13px;
+            color: #71717a;
+            font-size: 12px;
+            font-weight: 500;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         input, select {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #d0d0d0;
-            border-radius: 0;
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
             font-size: 14px;
-            background: #fff;
-            color: #000;
+            color: #e4e4e7;
+            font-family: inherit;
+            transition: all 0.2s;
         }
         input:focus, select:focus {
             outline: none;
-            border-color: #000;
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
         }
-        button {
+        input::placeholder {
+            color: #52525b;
+        }
+        .btn {
             padding: 12px 24px;
-            background: #000;
-            color: white;
             border: none;
-            border-radius: 0;
-            cursor: pointer;
+            border-radius: 10px;
             font-size: 13px;
-            font-weight: 400;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
-        button:hover { background: #333; }
+        .btn-primary {
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            color: #a1a1aa;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.1);
+            color: #e4e4e7;
+        }
         .btn-danger {
-            background: #000;
-            border: 1px solid #000;
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
         .btn-danger:hover {
-            background: #fff;
-            color: #000;
+            background: rgba(239, 68, 68, 0.25);
         }
         .btn-success {
-            background: #000;
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
         }
-        .btn-success:hover { background: #333; }
+        .btn-success:hover {
+            background: rgba(34, 197, 94, 0.25);
+        }
         .btn-warning {
-            background: #ff9800;
-            border: 1px solid #ff9800;
-            color: white;
+            background: rgba(251, 146, 60, 0.15);
+            color: #fb923c;
+            border: 1px solid rgba(251, 146, 60, 0.3);
         }
         .btn-warning:hover {
-            background: #f57c00;
-            border-color: #f57c00;
+            background: rgba(251, 146, 60, 0.25);
         }
+        .btn-small {
+            padding: 8px 12px;
+            font-size: 12px;
+            border-radius: 8px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 600;
+            color: #e4e4e7;
+        }
+        .stat-label {
+            font-size: 11px;
+            color: #71717a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        .stat-card.active .stat-value { color: #22c55e; }
+        .stat-card.blocked .stat-value { color: #ef4444; }
+        .stat-card.total .stat-value { color: #7c3aed; }
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid #e0e0e0;
-            font-size: 13px;
         }
         th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
             font-weight: 500;
-            color: #000;
+            color: #71717a;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            font-size: 11px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        tr:hover { background: #fafafa; }
-        .status-active { color: #000; font-weight: 400; }
-        .status-blocked { color: #999; font-weight: 400; }
-        .status-expired { color: #999; font-weight: 400; }
-        .key-code {
-            font-family: 'Courier New', monospace;
-            background: #fafafa;
+        td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+        }
+        tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+        .key-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .key-text {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 13px;
+            color: #00d4ff;
+            cursor: pointer;
+        }
+        .key-text:hover {
+            text-decoration: underline;
+        }
+        .copy-btn {
+            background: rgba(255,255,255,0.05);
+            border: none;
             padding: 6px 10px;
-            border: 1px solid #e0e0e0;
-            font-weight: 400;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #71717a;
             font-size: 12px;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: #e4e4e7;
+        }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-active {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+        }
+        .status-blocked {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+        .status-expired {
+            background: rgba(251, 146, 60, 0.15);
+            color: #fb923c;
         }
         .device-info {
             font-size: 11px;
-            color: #999;
+            color: #52525b;
             margin-top: 4px;
         }
-        .logout {
-            float: right;
-            background: transparent;
-            color: #000;
-            border: 1px solid #000;
-            text-decoration: none;
-            padding: 10px 20px;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .logout:hover {
-            background: #000;
-            color: #fff;
+        .action-buttons {
+            display: flex;
+            gap: 6px;
         }
         .result-box {
-            margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-            background: #fafafa;
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: 10px;
             font-size: 13px;
         }
         .result-success {
-            border-color: #000;
-            background: #000;
-            color: #fff;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #22c55e;
         }
         .result-error {
-            border-color: #d32f2f;
-            background: #fff;
-            color: #d32f2f;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
         }
         .modal {
             display: none;
@@ -587,172 +708,135 @@ ADMIN_HTML = """
             top: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.5);
-            overflow: auto;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
         }
         .modal-content {
-            background: #fff;
+            background: #1e1e2d;
             margin: 50px auto;
-            padding: 30px;
-            border: 1px solid #e0e0e0;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
             width: 90%;
-            max-width: 600px;
+            max-width: 550px;
         }
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #e4e4e7;
         }
         .close {
-            color: #000;
-            font-size: 28px;
-            font-weight: 300;
-            cursor: pointer;
-            background: none;
+            background: rgba(255,255,255,0.05);
             border: none;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            line-height: 30px;
+            color: #71717a;
+            font-size: 20px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .close:hover {
-            background: #f0f0f0;
+            background: rgba(255,255,255,0.1);
+            color: #e4e4e7;
         }
         .info-row {
             display: flex;
             padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
         .info-label {
-            font-weight: 500;
-            width: 150px;
-            color: #666;
+            width: 140px;
             font-size: 12px;
+            color: #71717a;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
         .info-value {
             flex: 1;
-            color: #000;
+            color: #e4e4e7;
             font-size: 14px;
         }
-        .key-clickable {
-            cursor: pointer;
-            text-decoration: underline;
-            color: #000;
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
         }
-        .key-clickable:hover {
-            color: #666;
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 11px;
-            margin: 2px;
+        .notification.success {
+            background: rgba(34, 197, 94, 0.9);
+            color: white;
         }
-        .key-input-group {
+        .notification.error {
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #52525b;
+        }
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+        .search-row {
             display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .key-input-group input {
-            flex: 1;
-            min-width: 200px;
-            font-family: 'Courier New', monospace;
-            cursor: text;
-        }
-        .key-input-group button {
-            white-space: nowrap;
-        }
-        .copy-btn {
-            padding: 6px 12px;
-            font-size: 11px;
-            background: #000;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .copy-btn:hover {
-            background: #333;
-        }
-        .copy-btn:active {
-            background: #666;
-        }
-        .key-cell {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .key-text {
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            word-break: break-all;
-            flex: 1;
-            min-width: 150px;
-        }
-        .action-buttons {
-            display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
-        }
-        .stats {
-            display: flex;
-            gap: 20px;
+            gap: 10px;
             margin-bottom: 20px;
-            padding: 15px;
-            background: #fafafa;
-            border: 1px solid #e0e0e0;
         }
-        .stat-item {
+        .search-row input {
             flex: 1;
-        }
-        .stat-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #666;
-            letter-spacing: 0.5px;
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: 300;
-            color: #000;
-            margin-top: 5px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Лицензии</h1>
+            <h1>License Manager</h1>
             <a href="/logout" class="logout">Выйти</a>
-            <div style="clear: both;"></div>
         </div>
 
         <div class="card">
-            <h2>Генерация ключа</h2>
+            <h2>✨ Генерация ключа</h2>
             <form id="generateForm">
-                <div class="form-group">
-                    <label>Срок действия (дней)</label>
-                    <input type="number" name="days" placeholder="Оставьте пустым для бессрочной" min="1">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Срок действия (дней)</label>
+                        <input type="number" name="days" placeholder="Пусто = бессрочный" min="1">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Создать ключ</button>
                 </div>
-                <button type="submit">Сгенерировать</button>
             </form>
             <div id="generateResult"></div>
         </div>
 
         <div class="card">
-            <h2>Список лицензий</h2>
+            <h2>📋 Список лицензий</h2>
             <div id="statsContainer"></div>
-            <div class="form-group" style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <input type="text" id="searchKey" placeholder="Поиск по ключу..." style="flex: 1;">
-                <button onclick="loadLicenses()">Обновить</button>
-                <button onclick="exportKeys()" style="background: #666;">Экспорт</button>
+            <div class="search-row">
+                <input type="text" id="searchKey" placeholder="🔍 Поиск по ключу...">
+                <button onclick="loadLicenses()" class="btn btn-secondary">↻ Обновить</button>
+                <button onclick="exportKeys()" class="btn btn-secondary">📥 Экспорт</button>
             </div>
             <div id="licensesTable"></div>
         </div>
@@ -818,51 +902,50 @@ ADMIN_HTML = """
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    // Обновляем статистику
                     updateStats(data.licenses);
                     
                     if (data.licenses.length === 0) {
-                        document.getElementById('licensesTable').innerHTML = '<p style="padding: 20px; color: #999; text-align: center;">Нет лицензий</p>';
+                        document.getElementById('licensesTable').innerHTML = '<div class="empty-state"><div style="font-size: 48px; margin-bottom: 16px;">📭</div><p>Нет лицензий</p></div>';
                         return;
                     }
                     
-                    let html = '<table><tr><th>Ключ</th><th>Статус</th><th>Создан</th><th>Истекает</th><th>Устройство</th><th>Действия</th></tr>';
+                    let html = '<table><thead><tr><th>Ключ</th><th>Статус</th><th>Создан</th><th>Истекает</th><th>Устройство</th><th>Действия</th></tr></thead><tbody>';
                     data.licenses.forEach(lic => {
-                        const statusClass = 'status-' + lic.status;
-                        const expires = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : 'Бессрочно';
-                        let device = 'Не активирован';
+                        const statusText = lic.status === 'active' ? '● Активен' : (lic.status === 'blocked' ? '● Заблокирован' : '● Истёк');
+                        const expires = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : '∞ Бессрочно';
+                        let device = '<span style="color: #52525b;">— Не привязан</span>';
                         if (lic.device_id) {
-                            device = '<div class="device-info">ID: ' + lic.device_id.substring(0, 16) + '...</div>';
+                            device = '<div style="color: #22c55e;">● Привязан</div><div class="device-info">' + lic.device_id.substring(0, 12) + '...</div>';
                             if (lic.device_info) {
                                 try {
-                                    const devInfo = JSON.parse(lic.device_info);
-                                    device += '<div class="device-info">' + (devInfo.hostname || '') + '</div>';
+                                    const devInfo = typeof lic.device_info === 'string' ? JSON.parse(lic.device_info) : lic.device_info;
+                                    if (devInfo.hostname) device += '<div class="device-info">' + devInfo.hostname + '</div>';
                                 } catch(e) {}
                             }
                         }
                         
-                        // Экранируем ключ для JavaScript
                         const keyEscaped = JSON.stringify(lic.key);
                         
                         html += '<tr>' +
                             '<td><div class="key-cell">' +
-                            '<span class="key-text key-clickable" onclick="showKeyInfo(' + JSON.stringify(lic) + ')" title="Нажмите для подробной информации">' + escapeHtml(lic.key) + '</span>' +
+                            '<span class="key-text" onclick="showKeyInfo(' + JSON.stringify(lic).replace(/"/g, '&quot;') + ')">' + escapeHtml(lic.key) + '</span>' +
+                            '<button class="copy-btn" onclick="copyKey(' + keyEscaped + ')">📋</button>' +
                             '</div></td>' +
-                            '<td><span class="' + statusClass + '">' + escapeHtml(lic.status) + '</span></td>' +
+                            '<td><span class="status status-' + lic.status + '">' + statusText + '</span></td>' +
                             '<td>' + new Date(lic.created_at).toLocaleDateString('ru-RU') + '</td>' +
-                            '<td>' + escapeHtml(expires) + '</td>' +
+                            '<td>' + expires + '</td>' +
                             '<td>' + device + '</td>' +
                             '<td><div class="action-buttons">' +
                             (lic.status === 'active' ? 
-                                '<button class="btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')" title="Заблокировать ключ">🚫</button>' :
-                                '<button class="btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')" title="Разблокировать ключ">✅</button>') +
+                                '<button class="btn btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')">🚫 Блок</button>' :
+                                '<button class="btn btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')">✅ Разблок</button>') +
                             (lic.device_id ? 
-                                '<button class="btn-warning btn-small" onclick="unbindDevice(' + keyEscaped + ')" title="Отвязать устройство">🔓</button>' : '') +
-                            '<button class="btn-danger btn-small" onclick="deleteKey(' + keyEscaped + ')" title="Удалить ключ" style="background: #d32f2f;">🗑️</button>' +
+                                '<button class="btn btn-warning btn-small" onclick="unbindDevice(' + keyEscaped + ')">🔓 Отвязать</button>' : '') +
+                            '<button class="btn btn-danger btn-small" onclick="deleteKey(' + keyEscaped + ')">🗑️</button>' +
                             '</div></td>' +
                             '</tr>';
                     });
-                    html += '</table>';
+                    html += '</tbody></table>';
                     document.getElementById('licensesTable').innerHTML = html;
                 } else {
                     showNotification('Ошибка загрузки: ' + (data.message || 'Неизвестная ошибка'), 'error');
@@ -885,11 +968,10 @@ ADMIN_HTML = """
             
             document.getElementById('statsContainer').innerHTML = 
                 '<div class="stats">' +
-                '<div class="stat-item"><div class="stat-label">Всего</div><div class="stat-value">' + stats.total + '</div></div>' +
-                '<div class="stat-item"><div class="stat-label">Активных</div><div class="stat-value">' + stats.active + '</div></div>' +
-                '<div class="stat-item"><div class="stat-label">Заблокировано</div><div class="stat-value">' + stats.blocked + '</div></div>' +
-                '<div class="stat-item"><div class="stat-label">Истекло</div><div class="stat-value">' + stats.expired + '</div></div>' +
-                '<div class="stat-item"><div class="stat-label">Активировано</div><div class="stat-value">' + stats.activated + '</div></div>' +
+                '<div class="stat-card total"><div class="stat-value">' + stats.total + '</div><div class="stat-label">Всего</div></div>' +
+                '<div class="stat-card active"><div class="stat-value">' + stats.active + '</div><div class="stat-label">Активных</div></div>' +
+                '<div class="stat-card blocked"><div class="stat-value">' + stats.blocked + '</div><div class="stat-label">Заблокировано</div></div>' +
+                '<div class="stat-card"><div class="stat-value">' + stats.activated + '</div><div class="stat-label">Привязано</div></div>' +
                 '</div>';
         }
         
@@ -1325,11 +1407,14 @@ def api_block():
         data = request.json
         key = data.get('key')
         
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
         conn = get_db_connection()
         if not conn:
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if USE_SQLITE:
             execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = ?", (key,))
         else:
@@ -1338,8 +1423,10 @@ def api_block():
         cur.close()
         conn.close()
         
-        return jsonify({"success": True}), 200
+        logger.info(f"Ключ {key} заблокирован")
+        return jsonify({"success": True, "message": "Ключ заблокирован"}), 200
     except Exception as e:
+        logger.error(f"Ошибка блокировки: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/unblock', methods=['POST'])
@@ -1350,11 +1437,14 @@ def api_unblock():
         data = request.json
         key = data.get('key')
         
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
         conn = get_db_connection()
         if not conn:
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if USE_SQLITE:
             execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = ?", (key,))
         else:
@@ -1363,8 +1453,10 @@ def api_unblock():
         cur.close()
         conn.close()
         
-        return jsonify({"success": True}), 200
+        logger.info(f"Ключ {key} разблокирован")
+        return jsonify({"success": True, "message": "Ключ разблокирован"}), 200
     except Exception as e:
+        logger.error(f"Ошибка разблокировки: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/unbind', methods=['POST'])
@@ -1375,11 +1467,14 @@ def api_unbind():
         data = request.json
         key = data.get('key')
         
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
         conn = get_db_connection()
         if not conn:
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if USE_SQLITE:
             execute_query(cur, "UPDATE licenses SET device_id = NULL, device_info = NULL, activated_at = NULL WHERE key = ?", (key,))
         else:
@@ -1409,7 +1504,7 @@ def api_delete():
         if not conn:
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
-        cur = conn.cursor()
+        cur = get_cursor(conn)
         if USE_SQLITE:
             execute_query(cur, "DELETE FROM licenses WHERE key = ?", (key,))
         else:
