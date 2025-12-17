@@ -51,7 +51,7 @@ else:
 logger = logging.getLogger(__name__)
 
 # Секретный ключ из переменных окружения
-SECRET_KEY = os.getenv("LICENSE_SECRET_KEY", "CHANGE_THIS_SECRET_KEY_IN_PRODUCTION")
+SECRET_KEY = os.getenv("LICENSE_SECRET_KEY", "eb3aad213730b203eef01da1d9bbbc0c63070a008c2fba734999622ad9981479")
 ADMIN_KEY = os.getenv("ADMIN_KEY", "CHANGE_THIS_ADMIN_KEY")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # Измените!
 
@@ -1425,10 +1425,21 @@ def check_license():
         cur.close()
         conn.close()
         
+        # Форматируем дату истечения
+        expires_str = None
+        if license_info['expires_at']:
+            try:
+                if isinstance(license_info['expires_at'], str):
+                    expires_str = license_info['expires_at']
+                else:
+                    expires_str = license_info['expires_at'].isoformat()
+            except:
+                expires_str = str(license_info['expires_at'])
+        
         return jsonify({
             "valid": True,
             "message": "Лицензия активна",
-            "expires": license_info['expires_at'].isoformat() if license_info['expires_at'] else None
+            "expires": expires_str
         }), 200
         
     except Exception as e:
