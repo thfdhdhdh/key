@@ -503,6 +503,15 @@ ADMIN_HTML = """
             background: #000;
         }
         .btn-success:hover { background: #333; }
+        .btn-warning {
+            background: #ff9800;
+            border: 1px solid #ff9800;
+            color: white;
+        }
+        .btn-warning:hover {
+            background: #f57c00;
+            border-color: #f57c00;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -847,6 +856,8 @@ ADMIN_HTML = """
                             (lic.status === 'active' ? 
                                 '<button class="btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')" title="Заблокировать ключ">🚫</button>' :
                                 '<button class="btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')" title="Разблокировать ключ">✅</button>') +
+                            (lic.device_id ? 
+                                '<button class="btn-warning btn-small" onclick="unbindDevice(' + keyEscaped + ')" title="Отвязать устройство">🔓</button>' : '') +
                             '<button class="btn-danger btn-small" onclick="deleteKey(' + keyEscaped + ')" title="Удалить ключ" style="background: #d32f2f;">🗑️</button>' +
                             '</div></td>' +
                             '</tr>';
@@ -993,6 +1004,8 @@ ADMIN_HTML = """
                 (license.status === 'active' ? 
                     '<button class="btn-danger" onclick="blockKey(' + JSON.stringify(license.key) + '); closeModal();">Заблокировать</button>' :
                     '<button class="btn-success" onclick="unblockKey(' + JSON.stringify(license.key) + '); closeModal();">Разблокировать</button>') +
+                (license.device_id ? 
+                    ' <button class="btn-warning" onclick="unbindDevice(' + JSON.stringify(license.key) + '); closeModal();" style="margin-left: 10px;">🔓 Отвязать устройство</button>' : '') +
                 ' <button onclick="closeModal()" style="background: #999; margin-left: 10px;">Закрыть</button>' +
                 '</div>';
             
@@ -1037,10 +1050,39 @@ ADMIN_HTML = """
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
+                    showNotification('Ключ разблокирован', 'success');
                     loadLicenses();
                 } else {
-                    alert('Ошибка: ' + data.message);
+                    showNotification('Ошибка: ' + data.message, 'error');
                 }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка разблокировки', 'error');
+            });
+        }
+
+        function unbindDevice(key) {
+            if (!confirm('Отвязать устройство от ключа ' + key + '? Ключ можно будет активировать на другом устройстве.')) {
+                return;
+            }
+            fetch('/api/unbind', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: key})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Устройство отвязано', 'success');
+                    loadLicenses();
+                } else {
+                    showNotification('Ошибка: ' + data.message, 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка отвязки устройства', 'error');
             });
         }
 
@@ -1325,6 +1367,33 @@ def api_unblock():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route('/api/unbind', methods=['POST'])
+@require_login
+def api_unbind():
+    """Отвязка устройства от ключа"""
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = conn.cursor()
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET device_id = NULL, device_info = NULL, activated_at = NULL WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET device_id = NULL, device_info = NULL, activated_at = NULL WHERE key = %s", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Устройство отвязано от ключа {key}")
+        return jsonify({"success": True, "message": "Устройство отвязано"}), 200
+    except Exception as e:
+        logger.error(f"Ошибка отвязки: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/api/delete', methods=['POST'])
 @require_login
 def api_delete():
@@ -1405,11 +1474,12 @@ def check_license():
         if license_info['expires_at']:
             expires = datetime.fromisoformat(license_info['expires_at']) if isinstance(license_info['expires_at'], str) else license_info['expires_at']
             if datetime.now() > expires:
-                execute_query(cur, "UPDATE licenses SET status = 'expired' WHERE key = %s", (key,))
+                # Блокируем истекший ключ автоматически
+                execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = %s", (key,))
                 conn.commit()
                 cur.close()
                 conn.close()
-                return jsonify({"valid": False, "message": "Лицензия истекла"}), 200
+                return jsonify({"valid": False, "message": "Лицензия истекла и заблокирована"}), 200
         
         if license_info['device_id'] and license_info['device_id'] != device_id:
             cur.close()
@@ -1525,6 +1595,64 @@ def activate_license():
         
     except Exception as e:
         logger.error(f"Ошибка активации: {e}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
+
+@app.route('/api/v1/license/deactivate', methods=['POST'])
+def deactivate_license():
+    """Деактивация (блокировка) лицензии"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "message": "Пустой запрос"}), 400
+        
+        signature = data.pop('signature', '')
+        timestamp = data.get('timestamp', 0)
+        
+        if not check_timestamp(timestamp):
+            return jsonify({"success": False, "message": "Устаревший запрос"}), 403
+        
+        if not verify_signature(data, signature):
+            return jsonify({"success": False, "message": "Неверная подпись"}), 403
+        
+        key = data.get('key')
+        device_id = data.get('device_id')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        execute_query(cur, "SELECT * FROM licenses WHERE key = %s", (key,))
+        row = cur.fetchone()
+        
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Ключ не найден"}), 200
+        
+        license_info = dict(row) if USE_SQLITE else row
+        
+        # Проверяем device_id
+        if license_info['device_id'] and license_info['device_id'] != device_id:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Ключ привязан к другому устройству"}), 200
+        
+        # Блокируем ключ
+        execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = %s", (key,))
+        conn.commit()
+        
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Ключ {key} заблокирован (деактивация)")
+        return jsonify({"success": True, "message": "Ключ заблокирован"}), 200
+        
+    except Exception as e:
+        logger.error(f"Ошибка деактивации: {e}")
         return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
 @app.route('/api/v1/license/heartbeat', methods=['POST'])
