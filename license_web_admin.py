@@ -807,6 +807,39 @@ ADMIN_HTML = """
         .search-row input {
             flex: 1;
         }
+        .info-grid {
+            display: grid;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .info-item .info-label {
+            color: #71717a;
+            font-size: 13px;
+        }
+        .manage-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .manage-actions .btn {
+            width: 100%;
+            justify-content: center;
+            padding: 14px 20px;
+            font-size: 14px;
+        }
+        .manage-actions .btn span {
+            margin-right: 8px;
+        }
+        #manageModal .modal-content {
+            max-width: 450px;
+        }
     </style>
 </head>
 <body>
@@ -824,34 +857,33 @@ ADMIN_HTML = """
                         <label>Срок действия (дней)</label>
                         <input type="number" name="days" placeholder="Пусто = бессрочный" min="1">
                     </div>
-                    <button type="submit" class="btn btn-primary">Создать ключ</button>
+                    <button type="submit" class="btn btn-primary">+ Создать</button>
                 </div>
             </form>
-            <div id="generateResult"></div>
         </div>
 
         <div class="card">
             <h2>📋 Список лицензий</h2>
             <div id="statsContainer"></div>
             <div class="search-row">
-                <input type="text" id="searchKey" placeholder="🔍 Поиск по ключу...">
-                <button onclick="loadLicenses()" class="btn btn-secondary">↻ Обновить</button>
-                <button onclick="exportKeys()" class="btn btn-secondary">📥 Экспорт</button>
+                <input type="text" id="searchKey" placeholder="🔍 Поиск..." onkeyup="loadLicenses()">
+                <button onclick="loadLicenses()" class="btn btn-secondary">↻</button>
             </div>
             <div id="licensesTable"></div>
         </div>
     </div>
-
-    <!-- Модальное окно с информацией о ключе -->
-    <div id="keyModal" class="modal">
+    
+    <!-- Модальное окно управления -->
+    <div id="manageModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Информация о ключе</h2>
-                <button class="close" onclick="closeModal()">&times;</button>
+                <h2>⚙️ Управление ключом</h2>
+                <button class="close" onclick="closeManageModal()">&times;</button>
             </div>
-            <div id="keyInfo"></div>
+            <div id="manageContent"></div>
         </div>
     </div>
+
 
     <script>
         function generateKey() {
@@ -867,31 +899,11 @@ ADMIN_HTML = """
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    const keyText = data.key;
-                    // Экранируем кавычки для JavaScript
-                    const keyEscaped = keyText.replace(/'/g, "\\'").replace(/"/g, '\\"');
-                    document.getElementById('generateResult').innerHTML = 
-                        '<div class="result-box result-success">' +
-                        '<strong>✅ Ключ успешно сгенерирован!</strong><br>' +
-                        '<div class="key-input-group" style="margin-top: 15px;">' +
-                        '<input type="text" value="' + escapeHtml(keyText) + '" id="generatedKeyInput" readonly style="font-family: monospace; font-size: 14px; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #fff; cursor: text;">' +
-                        '<button onclick="copyKey(' + JSON.stringify(keyText) + ')" style="padding: 10px 20px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; cursor: pointer; text-transform: uppercase; font-size: 12px; white-space: nowrap;">📋 Копировать</button>' +
-                        '</div>' +
-                        '<p style="margin-top: 10px; font-size: 12px; opacity: 0.8;">Ключ готов к использованию в вашем софте!</p>' +
-                        '</div>';
-                    // Автоматически выбираем текст для удобства копирования
-                    setTimeout(() => {
-                        const input = document.getElementById('generatedKeyInput');
-                        if (input) {
-                            input.select();
-                            input.setSelectionRange(0, 99999);
-                        }
-                    }, 100);
+                    showNotification('✅ Ключ создан: ' + data.key, 'success');
                     form.reset();
                     loadLicenses();
                 } else {
-                    document.getElementById('generateResult').innerHTML = 
-                        '<div class="result-box result-error">Ошибка: ' + data.message + '</div>';
+                    showNotification('Ошибка: ' + data.message, 'error');
                 }
             });
         }
@@ -909,40 +921,24 @@ ADMIN_HTML = """
                         return;
                     }
                     
-                    let html = '<table><thead><tr><th>Ключ</th><th>Статус</th><th>Создан</th><th>Истекает</th><th>Устройство</th><th>Действия</th></tr></thead><tbody>';
+                    let html = '<table><thead><tr><th>Ключ</th><th>Статус</th><th>Создан</th><th>Истекает</th><th>Устройство</th><th></th></tr></thead><tbody>';
                     data.licenses.forEach(lic => {
                         const statusText = lic.status === 'active' ? '● Активен' : (lic.status === 'blocked' ? '● Заблокирован' : '● Истёк');
-                        const expires = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : '∞ Бессрочно';
-                        let device = '<span style="color: #52525b;">— Не привязан</span>';
+                        const expires = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : '∞';
+                        let device = '<span style="color: #52525b;">—</span>';
                         if (lic.device_id) {
-                            device = '<div style="color: #22c55e;">● Привязан</div><div class="device-info">' + lic.device_id.substring(0, 12) + '...</div>';
-                            if (lic.device_info) {
-                                try {
-                                    const devInfo = typeof lic.device_info === 'string' ? JSON.parse(lic.device_info) : lic.device_info;
-                                    if (devInfo.hostname) device += '<div class="device-info">' + devInfo.hostname + '</div>';
-                                } catch(e) {}
-                            }
+                            device = '<span style="color: #22c55e;">● Да</span>';
                         }
                         
-                        const keyEscaped = JSON.stringify(lic.key);
+                        const licJson = JSON.stringify(lic).replace(/'/g, "\\'").replace(/"/g, '&quot;');
                         
                         html += '<tr>' +
-                            '<td><div class="key-cell">' +
-                            '<span class="key-text" onclick="showKeyInfo(' + JSON.stringify(lic).replace(/"/g, '&quot;') + ')">' + escapeHtml(lic.key) + '</span>' +
-                            '<button class="copy-btn" onclick="copyKey(' + keyEscaped + ')">📋</button>' +
-                            '</div></td>' +
+                            '<td><span class="key-text">' + escapeHtml(lic.key) + '</span></td>' +
                             '<td><span class="status status-' + lic.status + '">' + statusText + '</span></td>' +
                             '<td>' + new Date(lic.created_at).toLocaleDateString('ru-RU') + '</td>' +
                             '<td>' + expires + '</td>' +
                             '<td>' + device + '</td>' +
-                            '<td><div class="action-buttons">' +
-                            (lic.status === 'active' ? 
-                                '<button class="btn btn-danger btn-small" onclick="blockKey(' + keyEscaped + ')">🚫 Блок</button>' :
-                                '<button class="btn btn-success btn-small" onclick="unblockKey(' + keyEscaped + ')">✅ Разблок</button>') +
-                            (lic.device_id ? 
-                                '<button class="btn btn-warning btn-small" onclick="unbindDevice(' + keyEscaped + ')">🔓 Отвязать</button>' : '') +
-                            '<button class="btn btn-danger btn-small" onclick="deleteKey(' + keyEscaped + ')">🗑️</button>' +
-                            '</div></td>' +
+                            '<td><button class="btn btn-secondary btn-small" onclick=\'openManage(' + licJson + ')\'>⚙️ Управление</button></td>' +
                             '</tr>';
                     });
                     html += '</tbody></table>';
@@ -981,281 +977,111 @@ ADMIN_HTML = """
             return div.innerHTML;
         }
         
-        function deleteKey(key) {
-            if (!confirm('Вы уверены, что хотите удалить ключ ' + key + '? Это действие нельзя отменить!')) {
-                return;
-            }
-            fetch('/api/delete', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({key: key})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showNotification('Ключ удален', 'success');
-                    loadLicenses();
-                } else {
-                    showNotification('Ошибка: ' + (data.message || 'Не удалось удалить ключ'), 'error');
-                }
-            })
-            .catch(err => {
-                console.error('Ошибка:', err);
-                showNotification('Ошибка удаления ключа', 'error');
-            });
-        }
+        // ===== МОДАЛЬНОЕ ОКНО УПРАВЛЕНИЯ =====
+        let currentLicense = null;
         
-        function exportKeys() {
-            fetch('/api/licenses')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    const keys = data.licenses.map(l => l.key).join('\\n');
-                    const blob = new Blob([keys], {type: 'text/plain'});
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'licenses_' + new Date().toISOString().split('T')[0] + '.txt';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    showNotification('Ключи экспортированы', 'success');
-                }
-            })
-            .catch(err => {
-                console.error('Ошибка:', err);
-                showNotification('Ошибка экспорта', 'error');
-            });
-        }
-
-        function showKeyInfo(license) {
-            const modal = document.getElementById('keyModal');
-            const infoDiv = document.getElementById('keyInfo');
+        function openManage(lic) {
+            currentLicense = lic;
+            const modal = document.getElementById('manageModal');
+            const content = document.getElementById('manageContent');
             
-            let deviceInfo = 'Не активирован';
-            if (license.device_id) {
-                deviceInfo = 'ID: ' + license.device_id;
-                if (license.device_info) {
-                    try {
-                        const devInfo = JSON.parse(license.device_info);
-                        deviceInfo += '<br>Хост: ' + (devInfo.hostname || 'N/A');
-                        deviceInfo += '<br>Платформа: ' + (devInfo.platform || 'N/A');
-                        deviceInfo += '<br>Архитектура: ' + (devInfo.architecture || 'N/A');
-                    } catch(e) {
-                        deviceInfo += '<br>Инфо: ' + license.device_info;
-                    }
-                }
+            let deviceInfo = '<span style="color:#52525b">Не привязан</span>';
+            if (lic.device_id) {
+                deviceInfo = '<span style="color:#22c55e">● Привязан</span><br><small style="color:#71717a">' + lic.device_id.substring(0, 20) + '...</small>';
             }
             
-            const created = license.created_at ? new Date(license.created_at).toLocaleString('ru-RU') : 'N/A';
-            const expires = license.expires_at ? new Date(license.expires_at).toLocaleString('ru-RU') : 'Бессрочно';
-            const activated = license.activated_at ? new Date(license.activated_at).toLocaleString('ru-RU') : 'Не активирован';
-            const lastCheck = license.last_check ? new Date(license.last_check).toLocaleString('ru-RU') : 'Никогда';
+            const expires = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : '∞ Бессрочно';
             
-            infoDiv.innerHTML = 
-                '<div class="info-row">' +
-                '<div class="info-label">Ключ:</div>' +
-                '<div class="info-value"><span class="key-code">' + license.key + '</span> <button onclick="copyKey(' + JSON.stringify(license.key) + ')" class="btn-small">Копировать</button></div>' +
+            content.innerHTML = 
+                '<div style="background:rgba(0,0,0,0.3); padding:16px; border-radius:12px; margin-bottom:20px;">' +
+                '<div style="font-family:monospace; font-size:16px; color:#00d4ff; word-break:break-all;">' + lic.key + '</div>' +
                 '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Статус:</div>' +
-                '<div class="info-value"><span class="status-' + license.status + '">' + license.status + '</span></div>' +
+                '<div class="info-grid">' +
+                '<div class="info-item"><span class="info-label">Статус</span><span class="status status-' + lic.status + '">' + (lic.status === 'active' ? '● Активен' : '● Заблокирован') + '</span></div>' +
+                '<div class="info-item"><span class="info-label">Истекает</span><span>' + expires + '</span></div>' +
+                '<div class="info-item"><span class="info-label">Устройство</span><span>' + deviceInfo + '</span></div>' +
                 '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Создан:</div>' +
-                '<div class="info-value">' + created + '</div>' +
-                '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Истекает:</div>' +
-                '<div class="info-value">' + expires + '</div>' +
-                '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Активирован:</div>' +
-                '<div class="info-value">' + activated + '</div>' +
-                '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Последняя проверка:</div>' +
-                '<div class="info-value">' + lastCheck + '</div>' +
-                '</div>' +
-                '<div class="info-row">' +
-                '<div class="info-label">Устройство:</div>' +
-                '<div class="info-value">' + deviceInfo + '</div>' +
-                '</div>' +
-                '<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">' +
-                (license.status === 'active' ? 
-                    '<button class="btn-danger" onclick="blockKey(' + JSON.stringify(license.key) + '); closeModal();">Заблокировать</button>' :
-                    '<button class="btn-success" onclick="unblockKey(' + JSON.stringify(license.key) + '); closeModal();">Разблокировать</button>') +
-                (license.device_id ? 
-                    ' <button class="btn-warning" onclick="unbindDevice(' + JSON.stringify(license.key) + '); closeModal();" style="margin-left: 10px;">🔓 Отвязать устройство</button>' : '') +
-                ' <button onclick="closeModal()" style="background: #999; margin-left: 10px;">Закрыть</button>' +
+                '<div class="manage-actions">' +
+                (lic.status === 'active' ? 
+                    '<button class="btn btn-danger" onclick="doBlock()"><span>🚫</span> Заблокировать</button>' :
+                    '<button class="btn btn-success" onclick="doUnblock()"><span>✅</span> Разблокировать</button>') +
+                (lic.device_id ? 
+                    '<button class="btn btn-warning" onclick="doUnbind()"><span>🔓</span> Отвязать устройство</button>' : '') +
+                '<button class="btn btn-danger" onclick="doDelete()" style="background:rgba(220,38,38,0.2); border-color:rgba(220,38,38,0.5);"><span>🗑️</span> Удалить ключ</button>' +
                 '</div>';
             
             modal.style.display = 'block';
         }
-
-        function closeModal() {
-            document.getElementById('keyModal').style.display = 'none';
+        
+        function closeManageModal() {
+            document.getElementById('manageModal').style.display = 'none';
+            currentLicense = null;
         }
-
+        
+        function doBlock() {
+            if (!currentLicense) return;
+            apiAction('/api/block', currentLicense.key, 'Ключ заблокирован');
+        }
+        
+        function doUnblock() {
+            if (!currentLicense) return;
+            apiAction('/api/unblock', currentLicense.key, 'Ключ разблокирован');
+        }
+        
+        function doUnbind() {
+            if (!currentLicense) return;
+            if (!confirm('Отвязать устройство? Ключ можно будет активировать на другом устройстве.')) return;
+            apiAction('/api/unbind', currentLicense.key, 'Устройство отвязано');
+        }
+        
+        function doDelete() {
+            if (!currentLicense) return;
+            if (!confirm('Удалить ключ ' + currentLicense.key + '? Это действие нельзя отменить!')) return;
+            apiAction('/api/delete', currentLicense.key, 'Ключ удален');
+        }
+        
+        function apiAction(url, key, successMsg) {
+            fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: key})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification(successMsg, 'success');
+                    closeManageModal();
+                    loadLicenses();
+                } else {
+                    showNotification('Ошибка: ' + (data.message || 'Неизвестная ошибка'), 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка сети', 'error');
+            });
+        }
+        
+        // Закрытие по клику вне модала
         window.onclick = function(event) {
-            const modal = document.getElementById('keyModal');
-            if (event.target == modal) {
-                closeModal();
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
             }
         }
 
-        function blockKey(key) {
-            if (confirm('Заблокировать ключ ' + key + '?')) {
-                fetch('/api/block', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({key: key})
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        loadLicenses();
-                    } else {
-                        alert('Ошибка: ' + data.message);
-                    }
-                });
-            }
-        }
-
-        function unblockKey(key) {
-            fetch('/api/unblock', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({key: key})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showNotification('Ключ разблокирован', 'success');
-                    loadLicenses();
-                } else {
-                    showNotification('Ошибка: ' + data.message, 'error');
-                }
-            })
-            .catch(err => {
-                console.error('Ошибка:', err);
-                showNotification('Ошибка разблокировки', 'error');
-            });
-        }
-
-        function unbindDevice(key) {
-            if (!confirm('Отвязать устройство от ключа ' + key + '? Ключ можно будет активировать на другом устройстве.')) {
-                return;
-            }
-            fetch('/api/unbind', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({key: key})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showNotification('Устройство отвязано', 'success');
-                    loadLicenses();
-                } else {
-                    showNotification('Ошибка: ' + data.message, 'error');
-                }
-            })
-            .catch(err => {
-                console.error('Ошибка:', err);
-                showNotification('Ошибка отвязки устройства', 'error');
-            });
-        }
-
-        function copyKey(key) {
-            // Улучшенная функция копирования
-            if (!key) {
-                showNotification('Ошибка: ключ пуст', 'error');
-                return;
-            }
-            
-            // Метод 1: Современный Clipboard API
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(key).then(function() {
-                    showNotification('Ключ скопирован!', 'success');
-                }).catch(function(err) {
-                    // Fallback на старый метод
-                    copyKeyFallback(key);
-                });
-            } else {
-                // Метод 2: Fallback для старых браузеров
-                copyKeyFallback(key);
-            }
-        }
-        
-        function copyKeyFallback(key) {
-            // Создаем временный input элемент
-            const textArea = document.createElement('textarea');
-            textArea.value = key;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            textArea.style.opacity = '0';
-            textArea.setAttribute('readonly', '');
-            document.body.appendChild(textArea);
-            
-            // Выбираем текст
-            textArea.select();
-            textArea.setSelectionRange(0, 99999); // Для мобильных устройств
-            
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showNotification('Ключ скопирован!', 'success');
-                } else {
-                    // Последний вариант - показать ключ для ручного копирования
-                    showKeyForCopy(key);
-                }
-            } catch (err) {
-                console.error('Ошибка копирования:', err);
-                showKeyForCopy(key);
-            }
-            
-            document.body.removeChild(textArea);
-        }
-        
-        function showKeyForCopy(key) {
-            // Создаем модальное окно с ключом для ручного копирования
-            const modal = document.createElement('div');
-            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
-            modal.innerHTML = `
-                <div style="background: #fff; padding: 30px; max-width: 500px; width: 90%; border: 1px solid #e0e0e0;">
-                    <h3 style="margin-bottom: 15px;">Скопируйте ключ вручную:</h3>
-                    <div class="key-input-group">
-                        <input type="text" value="${key}" id="manualCopyInput" readonly style="cursor: text; user-select: all;">
-                        <button onclick="document.getElementById('manualCopyInput').select(); document.execCommand('copy'); showNotification('Ключ скопирован!', 'success'); this.parentElement.parentElement.parentElement.remove();">Копировать</button>
-                    </div>
-                    <button onclick="this.parentElement.parentElement.remove()" style="margin-top: 15px; width: 100%; background: #999;">Закрыть</button>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            // Автоматически выбираем текст
-            setTimeout(() => {
-                const input = document.getElementById('manualCopyInput');
-                if (input) {
-                    input.select();
-                    input.setSelectionRange(0, 99999);
-                }
-            }, 100);
-        }
-        
         function showNotification(message, type) {
+            const existing = document.querySelector('.notification');
+            if (existing) existing.remove();
+            
             const notification = document.createElement('div');
+            notification.className = 'notification ' + type;
             notification.textContent = message;
-            const bgColor = type === 'success' ? '#000' : '#d32f2f';
-            notification.style.cssText = `position: fixed; top: 20px; right: 20px; background: ${bgColor}; color: #fff; padding: 12px 24px; z-index: 10000; font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);`;
             document.body.appendChild(notification);
             setTimeout(() => {
-                notification.style.transition = 'opacity 0.3s';
                 notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
                 setTimeout(() => notification.remove(), 300);
-            }, 2000);
+            }, 3000);
         }
 
         document.getElementById('generateForm').addEventListener('submit', function(e) {
