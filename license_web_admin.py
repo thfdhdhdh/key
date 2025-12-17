@@ -1494,10 +1494,10 @@ def activate_license():
             expires = datetime.fromisoformat(license_info['expires_at']) if isinstance(license_info['expires_at'], str) else license_info['expires_at']
             if datetime.now() > expires:
                 execute_query(cur, "UPDATE licenses SET status = 'expired' WHERE key = %s", (key,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return jsonify({"success": False, "message": "Лицензия истекла"}), 200
+                conn.commit()
+                cur.close()
+                conn.close()
+                return jsonify({"success": False, "message": "Лицензия истекла"}), 200
         
         if license_info['device_id'] and license_info['device_id'] != device_id:
             cur.close()
