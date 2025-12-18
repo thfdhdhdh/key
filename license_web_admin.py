@@ -1201,9 +1201,9 @@ def api_licenses():
         cur = get_cursor(conn)
         # Всегда загружаем все ключи, отсортированные по дате создания (новые сверху)
         if USE_SQLITE:
-            execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC", None)
+            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
         else:
-            execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC", None)
+            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
         
         raw_licenses = cur.fetchall()
         licenses = []
