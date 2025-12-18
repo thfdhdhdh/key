@@ -866,9 +866,8 @@ ADMIN_HTML = """
         <div class="card">
             <h2>📋 Список лицензий</h2>
             <div id="statsContainer"></div>
-            <div class="search-row">
-                <input type="text" id="searchKey" placeholder="🔍 Поиск..." onkeyup="loadLicenses()">
-                <button onclick="loadLicenses()" class="btn btn-secondary">↻</button>
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
+                <button onclick="loadLicenses()" class="btn btn-secondary">↻ Обновить</button>
             </div>
             <div id="licensesTable"></div>
         </div>
@@ -916,8 +915,7 @@ ADMIN_HTML = """
         }
 
         function loadLicenses() {
-            const search = document.getElementById('searchKey').value;
-            fetch('/api/licenses' + (search ? '?search=' + encodeURIComponent(search) : ''))
+            fetch('/api/licenses')
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
@@ -1103,11 +1101,6 @@ ADMIN_HTML = """
             generateKey();
         });
 
-        document.getElementById('searchKey').addEventListener('keyup', function(e) {
-            if (e.key === 'Enter') {
-                loadLicenses();
-            }
-        });
 
         // Загружаем при загрузке страницы
         loadLicenses();
@@ -1201,19 +1194,16 @@ def api_generate():
 def api_licenses():
     """Получение списка лицензий"""
     try:
-        search = request.args.get('search', '')
         conn = get_db_connection()
         if not conn:
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
         cur = get_cursor(conn)
-        if search:
-            if USE_SQLITE:
-                execute_query(cur, "SELECT * FROM licenses WHERE key LIKE ? ORDER BY created_at DESC", (f'%{search}%',))
-            else:
-                execute_query(cur, "SELECT * FROM licenses WHERE key LIKE %s ORDER BY created_at DESC", (f'%{search}%',))
+        # Всегда загружаем все ключи, отсортированные по дате создания (новые сверху)
+        if USE_SQLITE:
+            execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC", None)
         else:
-            execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC")
+            execute_query(cur, "SELECT * FROM licenses ORDER BY created_at DESC", None)
         
         raw_licenses = cur.fetchall()
         licenses = []
@@ -1492,7 +1482,10 @@ def activate_license():
             return jsonify({"success": False, "message": "Ошибка сервера"}), 500
         
         cur = get_cursor(conn)
-        execute_query(cur, "SELECT * FROM licenses WHERE key = %s", (key,))
+        if USE_SQLITE:
+            execute_query(cur, "SELECT * FROM licenses WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "SELECT * FROM licenses WHERE key = %s", (key,))
         row = cur.fetchone()
         
         if not row:
@@ -1510,7 +1503,10 @@ def activate_license():
         if license_info['expires_at']:
             expires = datetime.fromisoformat(license_info['expires_at']) if isinstance(license_info['expires_at'], str) else license_info['expires_at']
             if datetime.now() > expires:
-                execute_query(cur, "UPDATE licenses SET status = 'expired' WHERE key = %s", (key,))
+                if USE_SQLITE:
+                    execute_query(cur, "UPDATE licenses SET status = 'expired' WHERE key = ?", (key,))
+                else:
+                    execute_query(cur, "UPDATE licenses SET status = 'expired' WHERE key = %s", (key,))
                 conn.commit()
                 cur.close()
                 conn.close()
