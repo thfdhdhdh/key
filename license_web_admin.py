@@ -916,7 +916,12 @@ ADMIN_HTML = """
 
         function loadLicenses() {
             fetch('/api/licenses')
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error('HTTP ' + r.status);
+                }
+                return r.json();
+            })
             .then(data => {
                 if (data.success) {
                     updateStats(data.licenses);
@@ -950,12 +955,16 @@ ADMIN_HTML = """
                     html += '</tbody></table>';
                     document.getElementById('licensesTable').innerHTML = html;
                 } else {
+                    console.error('Ошибка загрузки:', data.message);
                     showNotification('Ошибка загрузки: ' + (data.message || 'Неизвестная ошибка'), 'error');
                 }
             })
             .catch(err => {
-                console.error('Ошибка:', err);
-                showNotification('Ошибка загрузки лицензий', 'error');
+                console.error('Ошибка загрузки лицензий:', err);
+                // Не показываем ошибку при каждом автообновлении, только в консоль
+                if (!window._autoRefresh) {
+                    showNotification('Ошибка загрузки лицензий', 'error');
+                }
             });
         }
         
@@ -1104,7 +1113,14 @@ ADMIN_HTML = """
 
         // Загружаем при загрузке страницы
         loadLicenses();
-        setInterval(loadLicenses, 30000); // Обновление каждые 30 секунд
+        // Автообновление каждые 10 секунд (более частое для надежности)
+        setInterval(function() {
+            try {
+                loadLicenses();
+            } catch(e) {
+                console.error('Ошибка автообновления:', e);
+            }
+        }, 10000);
     </script>
 </body>
 </html>
@@ -1181,9 +1197,22 @@ def api_generate():
                 VALUES (%s, %s, 'active')
             """, (key, expires_at))
         conn.commit()
+        
+        # Проверяем, что ключ действительно сохранился
+        if USE_SQLITE:
+            cur.execute("SELECT * FROM licenses WHERE key = ?", (key,))
+        else:
+            cur.execute("SELECT * FROM licenses WHERE key = %s", (key,))
+        saved = cur.fetchone()
+        
         cur.close()
         conn.close()
         
+        if not saved:
+            logger.error(f"Ключ {key} не был сохранен в БД!")
+            return jsonify({"success": False, "message": "Ошибка сохранения ключа"}), 500
+        
+        logger.info(f"Ключ {key} успешно создан и сохранен")
         return jsonify({"success": True, "key": key}), 200
     except Exception as e:
         logger.error(f"Ошибка генерации: {e}")
@@ -1200,12 +1229,19 @@ def api_licenses():
         
         cur = get_cursor(conn)
         # Всегда загружаем все ключи, отсортированные по дате создания (новые сверху)
-        if USE_SQLITE:
-            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
-        else:
-            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
-        
-        raw_licenses = cur.fetchall()
+        try:
+            if USE_SQLITE:
+                cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
+            else:
+                cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
+            
+            raw_licenses = cur.fetchall()
+            logger.info(f"Загружено {len(raw_licenses)} ключей из БД")
+        except Exception as e:
+            logger.error(f"Ошибка выполнения запроса: {e}")
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": f"Ошибка БД: {str(e)}"}), 500
         licenses = []
         # Конвертируем строки БД в обычные dict + приводим даты к строкам
         for row in raw_licenses:
