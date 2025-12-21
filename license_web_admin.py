@@ -1568,27 +1568,31 @@ def api_search_keys():
         saved_count = 0
         
         for key in unique_keys:
-            # Проверяем, не существует ли уже этот ключ
-            if USE_SQLITE:
-                cur.execute("SELECT id FROM found_keys WHERE key = ?", (key,))
-            else:
-                cur.execute("SELECT id FROM found_keys WHERE key = %s", (key,))
-            
-            existing = cur.fetchone()
-            
-            if not existing:
-                # Сохраняем новый ключ
+            try:
+                # Проверяем, не существует ли уже этот ключ
                 if USE_SQLITE:
-                    execute_query(cur, """
-                        INSERT INTO found_keys (key, source_url)
-                        VALUES (?, ?)
-                    """, (key, url))
+                    execute_query(cur, "SELECT id FROM found_keys WHERE key = ?", (key,))
                 else:
-                    execute_query(cur, """
-                        INSERT INTO found_keys (key, source_url)
-                        VALUES (%s, %s)
-                    """, (key, url))
-                saved_count += 1
+                    execute_query(cur, "SELECT id FROM found_keys WHERE key = %s", (key,))
+                
+                existing = cur.fetchone()
+                
+                if not existing:
+                    # Сохраняем новый ключ
+                    if USE_SQLITE:
+                        execute_query(cur, """
+                            INSERT INTO found_keys (key, source_url)
+                            VALUES (?, ?)
+                        """, (key, url))
+                    else:
+                        execute_query(cur, """
+                            INSERT INTO found_keys (key, source_url)
+                            VALUES (%s, %s)
+                        """, (key, url))
+                    saved_count += 1
+            except Exception as e:
+                logger.warning(f"Ошибка при сохранении ключа {key}: {e}")
+                continue
         
         conn.commit()
         cur.close()
@@ -1612,9 +1616,9 @@ def api_found_keys():
         
         cur = get_cursor(conn)
         if USE_SQLITE:
-            cur.execute("SELECT * FROM found_keys ORDER BY found_at DESC")
+            execute_query(cur, "SELECT * FROM found_keys ORDER BY found_at DESC")
         else:
-            cur.execute("SELECT * FROM found_keys ORDER BY found_at DESC")
+            execute_query(cur, "SELECT * FROM found_keys ORDER BY found_at DESC")
         
         raw_keys = cur.fetchall()
         keys = []
@@ -1662,9 +1666,9 @@ def api_add_found_key():
         
         # Проверяем, существует ли уже этот ключ в лицензиях
         if USE_SQLITE:
-            cur.execute("SELECT id FROM licenses WHERE key = ?", (key,))
+            execute_query(cur, "SELECT id FROM licenses WHERE key = ?", (key,))
         else:
-            cur.execute("SELECT id FROM licenses WHERE key = %s", (key,))
+            execute_query(cur, "SELECT id FROM licenses WHERE key = %s", (key,))
         
         existing = cur.fetchone()
         
