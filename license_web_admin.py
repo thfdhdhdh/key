@@ -11,6 +11,8 @@ import logging
 from datetime import datetime, timedelta
 import secrets
 from functools import wraps
+import re
+import requests
 
 # Загрузка переменных окружения из .env
 try:
@@ -201,6 +203,16 @@ def init_database():
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS found_keys (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key TEXT NOT NULL,
+                        source_url TEXT,
+                        found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        added_to_licenses INTEGER DEFAULT 0
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_found_keys_key ON found_keys(key)")
             else:
                 # PostgreSQL синтаксис
                 cur.execute("""
@@ -231,6 +243,16 @@ def init_database():
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(key)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_licenses_device ON licenses(device_id)")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS found_keys (
+                        id SERIAL PRIMARY KEY,
+                        key VARCHAR(50) NOT NULL,
+                        source_url TEXT,
+                        found_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        added_to_licenses INTEGER DEFAULT 0
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_found_keys_key ON found_keys(key)")
             
             conn.commit()
             cur.close()
@@ -864,6 +886,28 @@ ADMIN_HTML = """
         </div>
 
         <div class="card">
+            <h2>🔍 Поиск ключей на сайте</h2>
+            <form id="searchForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>URL сайта</label>
+                        <input type="url" name="url" placeholder="https://example.com" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">🔍 Поиск</button>
+                </div>
+            </form>
+            <div id="searchResult"></div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Найденные ключи</h2>
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
+                <button onclick="loadFoundKeys()" class="btn btn-secondary">↻ Обновить</button>
+            </div>
+            <div id="foundKeysTable"></div>
+        </div>
+
+        <div class="card">
             <h2>📋 Список лицензий</h2>
             <div id="statsContainer"></div>
             <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
@@ -1105,14 +1149,127 @@ ADMIN_HTML = """
             }, 3000);
         }
 
+        function searchKeys() {
+            const form = document.getElementById('searchForm');
+            const formData = new FormData(form);
+            const url = formData.get('url');
+
+            if (!url) {
+                showNotification('❌ Введите URL!', 'error');
+                return;
+            }
+
+            const resultDiv = document.getElementById('searchResult');
+            resultDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #71717a;">🔍 Поиск ключей...</div>';
+
+            fetch('/api/search_keys', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url: url})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const count = data.keys.length;
+                    resultDiv.innerHTML = 
+                        '<div class="result-success" style="margin-top: 16px;">' +
+                        '<div style="font-size: 14px; margin-bottom: 8px;">✅ Найдено ключей: ' + count + '</div>' +
+                        (count > 0 ? '<div style="font-size: 12px; color: #71717a;">Ключи сохранены в базу данных</div>' : '') +
+                        '</div>';
+                    loadFoundKeys();
+                } else {
+                    resultDiv.innerHTML = 
+                        '<div class="result-error" style="margin-top: 16px;">' +
+                        '❌ Ошибка: ' + (data.message || 'Неизвестная ошибка') +
+                        '</div>';
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка поиска:', err);
+                resultDiv.innerHTML = 
+                    '<div class="result-error" style="margin-top: 16px;">' +
+                    '❌ Ошибка сети' +
+                    '</div>';
+            });
+        }
+
+        function loadFoundKeys() {
+            fetch('/api/found_keys')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.keys.length === 0) {
+                        document.getElementById('foundKeysTable').innerHTML = 
+                            '<div class="empty-state"><div style="font-size: 48px; margin-bottom: 16px;">📭</div><p>Нет найденных ключей</p></div>';
+                        return;
+                    }
+                    
+                    let html = '<table><thead><tr><th>Ключ</th><th>Источник</th><th>Найден</th><th>Добавлен</th><th></th></tr></thead><tbody>';
+                    data.keys.forEach(key => {
+                        const foundDate = new Date(key.found_at).toLocaleString('ru-RU');
+                        const added = key.added_to_licenses ? '<span style="color: #22c55e;">✅ Да</span>' : '<span style="color: #52525b;">—</span>';
+                        const source = key.source_url ? '<a href="' + escapeHtml(key.source_url) + '" target="_blank" style="color: #00d4ff; text-decoration: none;">' + escapeHtml(key.source_url.substring(0, 50)) + (key.source_url.length > 50 ? '...' : '') + '</a>' : '<span style="color: #52525b;">—</span>';
+                        
+                        html += '<tr>' +
+                            '<td><span class="key-text">' + escapeHtml(key.key) + '</span></td>' +
+                            '<td>' + source + '</td>' +
+                            '<td>' + foundDate + '</td>' +
+                            '<td>' + added + '</td>' +
+                            '<td>' +
+                            (key.added_to_licenses ? '' : '<button class="btn btn-success btn-small" onclick="addFoundKeyToLicenses(\'' + escapeHtml(key.key) + '\')">+ Добавить в лицензии</button>') +
+                            '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('foundKeysTable').innerHTML = html;
+                } else {
+                    console.error('Ошибка загрузки:', data.message);
+                    showNotification('Ошибка загрузки: ' + (data.message || 'Неизвестная ошибка'), 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка загрузки найденных ключей:', err);
+                showNotification('Ошибка загрузки найденных ключей', 'error');
+            });
+        }
+
+        function addFoundKeyToLicenses(key) {
+            if (!confirm('Добавить ключ ' + key + ' в список лицензий?')) return;
+            
+            fetch('/api/add_found_key', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: key})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('✅ Ключ добавлен в лицензии', 'success');
+                    loadFoundKeys();
+                    loadLicenses();
+                } else {
+                    showNotification('Ошибка: ' + (data.message || 'Неизвестная ошибка'), 'error');
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка:', err);
+                showNotification('Ошибка сети', 'error');
+            });
+        }
+
         document.getElementById('generateForm').addEventListener('submit', function(e) {
             e.preventDefault();
             generateKey();
         });
 
+        document.getElementById('searchForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            searchKeys();
+        });
 
         // Загружаем при загрузке страницы
         loadLicenses();
+        loadFoundKeys();
         // Автообновление каждые 10 секунд (более частое для надежности)
         setInterval(function() {
             try {
@@ -1365,6 +1522,188 @@ def api_unbind():
         return jsonify({"success": True, "message": "Устройство отвязано"}), 200
     except Exception as e:
         logger.error(f"Ошибка отвязки: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/search_keys', methods=['POST'])
+@require_login
+def api_search_keys():
+    """Поиск ключей на сайте"""
+    try:
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({"success": False, "message": "URL не указан"}), 400
+        
+        # Добавляем протокол если отсутствует
+        if not url.startswith('http://') and not url.startswith('https://'):
+            url = 'https://' + url
+        
+        # Загружаем страницу
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            return jsonify({"success": False, "message": f"Ошибка загрузки сайта: {str(e)}"}), 400
+        
+        # Ищем ключи в тексте страницы
+        text = response.text
+        # Паттерн для ключей TS-XXXXXXXX (8+ символов после TS-)
+        pattern = r'TS-[A-F0-9]{8,}'
+        found = re.findall(pattern, text, re.IGNORECASE)
+        
+        # Убираем дубликаты
+        unique_keys = list(set(found))
+        
+        # Сохраняем найденные ключи в БД
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        saved_count = 0
+        
+        for key in unique_keys:
+            # Проверяем, не существует ли уже этот ключ
+            if USE_SQLITE:
+                cur.execute("SELECT id FROM found_keys WHERE key = ?", (key,))
+            else:
+                cur.execute("SELECT id FROM found_keys WHERE key = %s", (key,))
+            
+            existing = cur.fetchone()
+            
+            if not existing:
+                # Сохраняем новый ключ
+                if USE_SQLITE:
+                    execute_query(cur, """
+                        INSERT INTO found_keys (key, source_url)
+                        VALUES (?, ?)
+                    """, (key, url))
+                else:
+                    execute_query(cur, """
+                        INSERT INTO found_keys (key, source_url)
+                        VALUES (%s, %s)
+                    """, (key, url))
+                saved_count += 1
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Найдено {len(unique_keys)} уникальных ключей на {url}, сохранено {saved_count} новых")
+        return jsonify({"success": True, "keys": unique_keys, "count": len(unique_keys), "saved": saved_count}), 200
+        
+    except Exception as e:
+        logger.error(f"Ошибка поиска ключей: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/found_keys', methods=['GET'])
+@require_login
+def api_found_keys():
+    """Получение списка найденных ключей"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            cur.execute("SELECT * FROM found_keys ORDER BY found_at DESC")
+        else:
+            cur.execute("SELECT * FROM found_keys ORDER BY found_at DESC")
+        
+        raw_keys = cur.fetchall()
+        keys = []
+        
+        for row in raw_keys:
+            if USE_SQLITE:
+                key_data = dict(row)
+            else:
+                key_data = dict(row)
+            
+            # Приводим даты к строкам
+            for field in ['found_at']:
+                val = key_data.get(field)
+                if val and hasattr(val, 'isoformat'):
+                    key_data[field] = val.isoformat()
+                elif val and not isinstance(val, str):
+                    key_data[field] = str(val)
+            
+            keys.append(key_data)
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({"success": True, "keys": keys}), 200
+    except Exception as e:
+        logger.error(f"Ошибка получения найденных ключей: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/add_found_key', methods=['POST'])
+@require_login
+def api_add_found_key():
+    """Добавление найденного ключа в список лицензий"""
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        
+        # Проверяем, существует ли уже этот ключ в лицензиях
+        if USE_SQLITE:
+            cur.execute("SELECT id FROM licenses WHERE key = ?", (key,))
+        else:
+            cur.execute("SELECT id FROM licenses WHERE key = %s", (key,))
+        
+        existing = cur.fetchone()
+        
+        if existing:
+            cur.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Ключ уже существует в лицензиях"}), 400
+        
+        # Добавляем ключ в лицензии
+        if USE_SQLITE:
+            execute_query(cur, """
+                INSERT INTO licenses (key, status)
+                VALUES (?, 'active')
+            """, (key,))
+        else:
+            execute_query(cur, """
+                INSERT INTO licenses (key, status)
+                VALUES (%s, 'active')
+            """, (key,))
+        
+        # Отмечаем ключ как добавленный
+        if USE_SQLITE:
+            execute_query(cur, """
+                UPDATE found_keys SET added_to_licenses = 1 WHERE key = ?
+            """, (key,))
+        else:
+            execute_query(cur, """
+                UPDATE found_keys SET added_to_licenses = 1 WHERE key = %s
+            """, (key,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Ключ {key} добавлен в лицензии из найденных")
+        return jsonify({"success": True, "message": "Ключ добавлен в лицензии"}), 200
+        
+    except Exception as e:
+        logger.error(f"Ошибка добавления ключа: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/delete', methods=['POST'])
