@@ -1405,8 +1405,14 @@ def check_bot_token():
     """Проверка токена бота"""
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
-        token = auth_header.replace('Bearer ', '')
-        return token == ADMIN_KEY
+        token = auth_header.replace('Bearer ', '').strip()
+        # Логируем для отладки (только первые символы)
+        logger.info(f"Проверка токена бота: получен токен длиной {len(token)}, ожидается длиной {len(ADMIN_KEY) if ADMIN_KEY else 0}")
+        result = token == ADMIN_KEY
+        if not result:
+            logger.warning(f"Токен не совпал. Получен: '{token[:10]}...', ожидается: '{ADMIN_KEY[:10] if ADMIN_KEY else 'N/A'}...'")
+        return result
+    logger.warning("Заголовок Authorization отсутствует или не начинается с 'Bearer '")
     return False
 
 @app.route('/api/bot/licenses', methods=['GET'])
