@@ -1400,6 +1400,236 @@ def api_delete():
         logger.error(f"Ошибка удаления ключа: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+# API endpoints для бота (с токеном авторизации вместо сессии)
+def check_bot_token():
+    """Проверка токена бота"""
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.replace('Bearer ', '')
+        return token == ADMIN_KEY
+    return False
+
+@app.route('/api/bot/licenses', methods=['GET'])
+def api_bot_licenses():
+    """Получение списка лицензий для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
+        else:
+            cur.execute("SELECT * FROM licenses ORDER BY created_at DESC")
+        
+        raw_licenses = cur.fetchall()
+        licenses = []
+        
+        for row in raw_licenses:
+            if USE_SQLITE:
+                lic = dict(row)
+            else:
+                lic = dict(row) if hasattr(row, 'keys') else {k: row[i] for i, k in enumerate(['id', 'key', 'status', 'device_id', 'device_info', 'created_at', 'activated_at', 'expires_at', 'last_check', 'description'])}
+            
+            for field in ['created_at', 'expires_at', 'activated_at', 'last_check']:
+                val = lic.get(field)
+                if val and hasattr(val, 'isoformat'):
+                    lic[field] = val.isoformat()
+                elif val and not isinstance(val, str):
+                    lic[field] = str(val)
+            
+            if lic.get('device_info') and not isinstance(lic['device_info'], str):
+                try:
+                    lic['device_info'] = json.dumps(lic['device_info'])
+                except:
+                    lic['device_info'] = str(lic['device_info'])
+            
+            licenses.append(lic)
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({"success": True, "licenses": licenses}), 200
+    except Exception as e:
+        logger.error(f"Ошибка получения лицензий для бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/bot/generate', methods=['POST'])
+def api_bot_generate():
+    """Генерация ключа для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        data = request.json
+        days = data.get('days')
+        
+        key = f"TS-{secrets.token_hex(8).upper()}"
+        expires_at = None
+        if days:
+            expires_at = datetime.now() + timedelta(days=days)
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = conn.cursor()
+        if USE_SQLITE:
+            execute_query(cur, """
+                INSERT INTO licenses (key, expires_at, status)
+                VALUES (?, ?, 'active')
+            """, (key, expires_at.isoformat() if expires_at else None))
+        else:
+            execute_query(cur, """
+                INSERT INTO licenses (key, expires_at, status)
+                VALUES (%s, %s, 'active')
+            """, (key, expires_at))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Ключ {key} создан через бота")
+        return jsonify({"success": True, "key": key}), 200
+    except Exception as e:
+        logger.error(f"Ошибка генерации для бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/bot/block', methods=['POST'])
+def api_bot_block():
+    """Блокировка ключа для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET status = 'blocked' WHERE key = %s", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Ключ {key} заблокирован через бота")
+        return jsonify({"success": True, "message": "Ключ заблокирован"}), 200
+    except Exception as e:
+        logger.error(f"Ошибка блокировки через бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/bot/unblock', methods=['POST'])
+def api_bot_unblock():
+    """Разблокировка ключа для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET status = 'active' WHERE key = %s", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Ключ {key} разблокирован через бота")
+        return jsonify({"success": True, "message": "Ключ разблокирован"}), 200
+    except Exception as e:
+        logger.error(f"Ошибка разблокировки через бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/bot/unbind', methods=['POST'])
+def api_bot_unbind():
+    """Отвязка устройства для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            execute_query(cur, "UPDATE licenses SET device_id = NULL, device_info = NULL, activated_at = NULL WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "UPDATE licenses SET device_id = NULL, device_info = NULL, activated_at = NULL WHERE key = %s", (key,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"Устройство отвязано от ключа {key} через бота")
+        return jsonify({"success": True, "message": "Устройство отвязано"}), 200
+    except Exception as e:
+        logger.error(f"Ошибка отвязки через бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/bot/delete', methods=['POST'])
+def api_bot_delete():
+    """Удаление ключа для бота (с токеном)"""
+    if not check_bot_token():
+        return jsonify({"success": False, "message": "Неверный токен авторизации"}), 401
+    
+    try:
+        data = request.json
+        key = data.get('key')
+        
+        if not key:
+            return jsonify({"success": False, "message": "Ключ не указан"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Ошибка сервера"}), 500
+        
+        cur = get_cursor(conn)
+        if USE_SQLITE:
+            execute_query(cur, "DELETE FROM licenses WHERE key = ?", (key,))
+        else:
+            execute_query(cur, "DELETE FROM licenses WHERE key = %s", (key,))
+        conn.commit()
+        deleted = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        if deleted > 0:
+            logger.info(f"Ключ {key} удален через бота")
+            return jsonify({"success": True, "message": "Ключ удален"}), 200
+        else:
+            return jsonify({"success": False, "message": "Ключ не найден"}), 404
+    except Exception as e:
+        logger.error(f"Ошибка удаления через бота: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 # API endpoints для клиента (БЕЗ проверки IP whitelist - доступны всем)
 @app.route('/api/v1/license/check', methods=['POST'])
 def check_license():
