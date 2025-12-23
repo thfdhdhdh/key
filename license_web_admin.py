@@ -52,7 +52,9 @@ logger = logging.getLogger(__name__)
 
 # Секретный ключ из переменных окружения
 SECRET_KEY = os.getenv("LICENSE_SECRET_KEY", "eb3aad213730b203eef01da1d9bbbc0c63070a008c2fba734999622ad9981479")
-ADMIN_KEY = os.getenv("ADMIN_KEY", "CHANGE_THIS_ADMIN_KEY")
+ADMIN_KEY = os.getenv("ADMIN_KEY", "CHANGE_THIS_ADMIN_KEY").strip()
+# Логируем при старте сервера (только длину для безопасности)
+logger.info(f"ADMIN_KEY загружен: длина={len(ADMIN_KEY)}, значение='{ADMIN_KEY[:10]}...' (первые 10 символов)")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # Измените!
 
 # Whitelist IP для доступа к админ-панели
