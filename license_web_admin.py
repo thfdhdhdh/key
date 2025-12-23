@@ -1406,11 +1406,21 @@ def check_bot_token():
     auth_header = request.headers.get('Authorization', '')
     if auth_header.startswith('Bearer '):
         token = auth_header.replace('Bearer ', '').strip()
-        # Логируем для отладки (только первые символы)
+        # Логируем для отладки
         logger.info(f"Проверка токена бота: получен токен длиной {len(token)}, ожидается длиной {len(ADMIN_KEY) if ADMIN_KEY else 0}")
+        logger.info(f"Получен токен (первые 20 символов): '{token[:20] if len(token) > 20 else token}'")
+        logger.info(f"Ожидается токен (первые 20 символов): '{ADMIN_KEY[:20] if ADMIN_KEY and len(ADMIN_KEY) > 20 else ADMIN_KEY if ADMIN_KEY else 'N/A'}'")
+        
+        # Сравниваем токены
         result = token == ADMIN_KEY
         if not result:
-            logger.warning(f"Токен не совпал. Получен: '{token[:10]}...', ожидается: '{ADMIN_KEY[:10] if ADMIN_KEY else 'N/A'}...'")
+            # Дополнительная проверка: может быть проблема с кодировкой или пробелами
+            token_bytes = token.encode('utf-8')
+            admin_key_bytes = ADMIN_KEY.encode('utf-8') if ADMIN_KEY else b''
+            logger.warning(f"Токен не совпал. Получен: '{token}' (bytes: {token_bytes}), ожидается: '{ADMIN_KEY}' (bytes: {admin_key_bytes})")
+            logger.warning(f"Сравнение байтов: {token_bytes == admin_key_bytes}")
+        else:
+            logger.info("✅ Токен совпал!")
         return result
     logger.warning("Заголовок Authorization отсутствует или не начинается с 'Bearer '")
     return False
