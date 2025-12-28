@@ -57,6 +57,14 @@ ADMIN_KEY = os.getenv("ADMIN_KEY", "CHANGE_THIS_ADMIN_KEY").strip()
 logger.info(f"ADMIN_KEY загружен: длина={len(ADMIN_KEY)}, значение='{ADMIN_KEY[:10]}...' (первые 10 символов)")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # Измените!
 
+# Настройки Telegram бота для уведомлений
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_ADMIN_IDS = os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if os.getenv("TELEGRAM_ADMIN_IDS") else []
+
+# Настройки Telegram бота для уведомлений
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_ADMIN_IDS = os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if os.getenv("TELEGRAM_ADMIN_IDS") else []
+
 # Whitelist IP для доступа к админ-панели
 # На Vercel whitelist отключен по умолчанию (разрешаем всем)
 ADMIN_WHITELIST_ENABLED = os.getenv("ADMIN_WHITELIST_ENABLED", "false" if os.getenv('VERCEL') else "true").lower() == 'true'
@@ -1801,6 +1809,9 @@ def activate_license():
             conn.close()
             return jsonify({"success": False, "message": "Ключ уже привязан к другому устройству"}), 200
         
+        # Проверяем, была ли это первая активация (устройство не было привязано)
+        was_first_activation = not license_info.get('device_id')
+        
         if USE_SQLITE:
             execute_query(cur, """
                 UPDATE licenses 
@@ -1817,6 +1828,13 @@ def activate_license():
         
         cur.close()
         conn.close()
+        
+        # Отправляем уведомление в Telegram бот при первой активации
+        if was_first_activation:
+            try:
+                send_telegram_notification(key, device_id, device_info)
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление в Telegram: {e}")
         
         return jsonify({"success": True, "message": "Ключ активирован"}), 200
         
@@ -1926,6 +1944,56 @@ def heartbeat():
     except Exception as e:
         logger.error(f"Ошибка heartbeat: {e}")
         return jsonify({"success": False, "message": f"Ошибка: {str(e)}"}), 500
+
+def send_telegram_notification(key: str, device_id: str, device_info: dict):
+    """Отправка уведомления в Telegram бот о привязке устройства"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_ADMIN_IDS:
+        return
+    
+    try:
+        import requests
+        
+        # Формируем информацию об устройстве
+        device_info_str = "N/A"
+        if device_info:
+            if isinstance(device_info, str):
+                device_info_dict = json.loads(device_info)
+            else:
+                device_info_dict = device_info
+            
+            if isinstance(device_info_dict, dict):
+                device_parts = []
+                if device_info_dict.get('os'):
+                    device_parts.append(f"OS: {device_info_dict['os']}")
+                if device_info_dict.get('hostname'):
+                    device_parts.append(f"Host: {device_info_dict['hostname']}")
+                if device_info_dict.get('username'):
+                    device_parts.append(f"User: {device_info_dict['username']}")
+                if device_parts:
+                    device_info_str = ', '.join(device_parts)
+        
+        message = (
+            f"🔔 *Устройство привязано к ключу*\n\n"
+            f"🔑 Ключ: `{key}`\n"
+            f"🆔 Device ID: `{device_id[:30]}...`\n"
+            f"💻 Информация: `{device_info_str}`\n"
+            f"🕐 Время: `{datetime.now().strftime('%d.%m.%Y %H:%M:%S')}`"
+        )
+        
+        # Отправляем уведомление всем админам
+        for admin_id in TELEGRAM_ADMIN_IDS:
+            if admin_id.strip():
+                try:
+                    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                    requests.post(url, json={
+                        "chat_id": admin_id.strip(),
+                        "text": message,
+                        "parse_mode": "Markdown"
+                    }, timeout=5)
+                except Exception as e:
+                    logger.warning(f"Ошибка отправки уведомления админу {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки Telegram уведомления: {e}")
 
 @app.route('/health', methods=['GET'])
 def health():
