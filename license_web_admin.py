@@ -80,6 +80,20 @@ USE_SQLITE = os.getenv('USE_SQLITE', 'false' if DATABASE_URL else 'true').lower(
 # На Vercel используем /tmp (единственное место где можно писать)
 DB_FILE = os.getenv('DB_FILE', '/tmp/licenses.db' if os.getenv('VERCEL') else 'licenses.db')
 
+# Логируем настройки БД при старте
+logger.info("=" * 50)
+logger.info("DATABASE CONFIGURATION:")
+logger.info(f"  DATABASE_URL set: {bool(DATABASE_URL)}")
+logger.info(f"  POSTGRES_URL set: {bool(os.getenv('POSTGRES_URL'))}")
+logger.info(f"  USE_SQLITE: {USE_SQLITE}")
+logger.info(f"  PSYCOPG2 available: {PSYCOPG2_AVAILABLE}")
+logger.info(f"  DB Type: {'SQLite' if USE_SQLITE else 'PostgreSQL'}")
+if USE_SQLITE:
+    logger.warning("⚠️ USING SQLITE - Data may be lost on Vercel!")
+else:
+    logger.info("✅ Using PostgreSQL - Data will persist!")
+logger.info("=" * 50)
+
 # Конфигурация PostgreSQL
 if DATABASE_URL:
     # Используем строку подключения напрямую
@@ -1999,6 +2013,40 @@ def send_telegram_notification(key: str, device_id: str, device_info: dict):
 def health():
     """Проверка работоспособности"""
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
+
+@app.route('/api/debug/db-status', methods=['GET'])
+def db_status():
+    """Проверка статуса базы данных (для диагностики)"""
+    status = {
+        "database_url_set": bool(DATABASE_URL),
+        "use_sqlite": USE_SQLITE,
+        "psycopg2_available": PSYCOPG2_AVAILABLE,
+        "vercel_env": bool(os.getenv('VERCEL')),
+        "db_type": "SQLite" if USE_SQLITE else "PostgreSQL",
+    }
+    
+    # Проверяем подключение
+    try:
+        conn = get_db_connection()
+        if conn:
+            cur = conn.cursor()
+            if USE_SQLITE:
+                cur.execute("SELECT COUNT(*) FROM licenses")
+            else:
+                cur.execute("SELECT COUNT(*) FROM licenses")
+            count = cur.fetchone()[0]
+            status["connection"] = "OK"
+            status["licenses_count"] = count
+            cur.close()
+            conn.close()
+        else:
+            status["connection"] = "FAILED"
+            status["error"] = "Could not get connection"
+    except Exception as e:
+        status["connection"] = "ERROR"
+        status["error"] = str(e)
+    
+    return jsonify(status), 200
 
 if __name__ == '__main__':
     print("=" * 60)
