@@ -76,7 +76,13 @@ if not ADMIN_WHITELIST and not os.getenv('VERCEL'):
 # Настройки БД
 # Если есть POSTGRES_URL, DATABASE_URL или POSTGRES_PRISMA_URL, используем PostgreSQL
 DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') or os.getenv('POSTGRES_PRISMA_URL')
-USE_SQLITE = os.getenv('USE_SQLITE', 'false' if DATABASE_URL else 'true').lower() == 'true'
+
+# ВАЖНО: Если есть DATABASE_URL - ВСЕГДА используем PostgreSQL, игнорируя USE_SQLITE
+if DATABASE_URL:
+    USE_SQLITE = False  # Принудительно PostgreSQL
+else:
+    USE_SQLITE = os.getenv('USE_SQLITE', 'true').lower() == 'true'
+
 # На Vercel используем /tmp (единственное место где можно писать)
 DB_FILE = os.getenv('DB_FILE', '/tmp/licenses.db' if os.getenv('VERCEL') else 'licenses.db')
 
